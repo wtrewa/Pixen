@@ -7,10 +7,12 @@ import { Request } from 'express';
 @Injectable()
 export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
   constructor(private readonly config: ConfigService) {
+    const secret = config.get<string>('jwt.refreshSecret') || process.env.JWT_REFRESH_SECRET || 'dev_refresh_secret_key';
+    
     super({
       jwtFromRequest: ExtractJwt.fromBodyField('refreshToken'),
       ignoreExpiration: false,
-      secretOrKey: config.get<string>('jwt.refreshSecret'),
+      secretOrKey: secret,
       passReqToCallback: true,
     });
   }
