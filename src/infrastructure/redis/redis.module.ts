@@ -12,6 +12,9 @@ import Redis from 'ioredis';
       provide: REDIS_CLIENT,
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
+        const url = config.get<string>('REDIS_URL');
+        if (url) return new Redis(url);
+        
         return new Redis({
           host: config.get<string>('redis.host'),
           port: config.get<number>('redis.port'),

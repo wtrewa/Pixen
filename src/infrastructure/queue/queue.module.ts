@@ -9,7 +9,7 @@ import { QUEUES } from '../../common/constants';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        redis: {
+        redis: config.get<string>('REDIS_URL') || {
           host: config.get<string>('redis.host'),
           port: config.get<number>('redis.port'),
           password: config.get<string>('redis.password') || undefined,
