@@ -1,19 +1,24 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class VerifyPaymentDto {
-  @ApiProperty()
+  @ApiProperty({ required: false })
   @IsString()
-  @IsNotEmpty()
-  razorpayOrderId: string;
+  @IsOptional()
+  razorpayOrderId?: string;
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
   @IsString()
-  @IsNotEmpty()
-  razorpayPaymentId: string;
+  @IsOptional()
+  razorpayPaymentId?: string;
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
   @IsString()
-  @IsNotEmpty()
-  razorpaySignature: string;
+  @IsOptional()
+  razorpaySignature?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  cashfreeOrderId?: string;
 }

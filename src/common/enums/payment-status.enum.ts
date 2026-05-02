@@ -13,4 +13,5 @@ export enum PaymentType {
 export enum PaymentGateway {
   RAZORPAY = 'RAZORPAY',
   STRIPE = 'STRIPE',
+  CASHFREE = 'CASHFREE',
 }
