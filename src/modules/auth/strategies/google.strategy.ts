@@ -12,25 +12,22 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     config: ConfigService,
     private readonly authService: AuthService,
   ) {
-    const clientID = config.get<string>('GOOGLE_CLIENT_ID');
-    const clientSecret = config.get<string>('GOOGLE_CLIENT_SECRET');
+    super({
+      clientID: config.get<string>('app.google.clientId') || 'GOOGLE_CLIENT_ID_NOT_CONFIGURED',
+      clientSecret: config.get<string>('app.google.clientSecret') || 'GOOGLE_CLIENT_SECRET_NOT_CONFIGURED',
+      callbackURL: config.get<string>('app.google.callbackUrl') || 'http://localhost:3000/api/v1/auth/google/callback',
+      scope: ['email', 'profile'],
+    });
+
+    const clientID = config.get<string>('app.google.clientId');
+    const clientSecret = config.get<string>('app.google.clientSecret');
 
     if (!clientID || !clientSecret) {
-      // passport-oauth2 requires a non-empty clientID at construction time;
-      // use sentinels so the server starts — routes will return 500 until
-      // real credentials are configured in .env.
       Logger.warn(
         'GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET not set — Google OAuth2 disabled',
         'GoogleStrategy',
       );
     }
-
-    super({
-      clientID: clientID || 'GOOGLE_CLIENT_ID_NOT_CONFIGURED',
-      clientSecret: clientSecret || 'GOOGLE_CLIENT_SECRET_NOT_CONFIGURED',
-      callbackURL: config.get<string>('GOOGLE_CALLBACK_URL') ?? 'http://localhost:3000/api/v1/auth/google/callback',
-      scope: ['email', 'profile'],
-    });
   }
 
   async validate(

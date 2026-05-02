@@ -72,7 +72,12 @@ export class AuthController {
   @UseGuards(AuthGuard('google'))
   @ApiExcludeEndpoint()
   async googleCallback(@Req() req: Request, @Res() res: Response) {
-    const tokens = await this.authService.generateTokensForUser(req.user as User);
+    const user = req.user as User;
+    if (!user) {
+      const frontendUrl = this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:3001';
+      return res.redirect(`${frontendUrl}/login?error=oauth_failed`);
+    }
+    const tokens = await this.authService.generateTokensForUser(user);
     const frontendUrl = this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:3001';
     res.redirect(
       `${frontendUrl}/auth/callback?accessToken=${tokens.accessToken}&refreshToken=${tokens.refreshToken}`,

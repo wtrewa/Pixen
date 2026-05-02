@@ -1,4 +1,4 @@
-import 'reflect-metadata';
+import 'reflect-metadata'; 
 import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -17,12 +17,20 @@ async function bootstrap() {
   const config = app.get(ConfigService);
   const port = config.get<number>('app.port', 3000);
 
-  app.use(helmet());
-  const frontendUrl = config.get<string>('FRONTEND_URL') ?? 'http://localhost:3002';
+  // Temporarily disable helmet to rule out header interference
+  // app.use(helmet()); 
+
   app.enableCors({
     origin: true,
     credentials: true,
   });
+
+  // Global request logger to catch even OPTIONS requests
+  app.use((req, res, next) => {
+    console.log(`[DEBUG] ${req.method} ${req.url}`);
+    next();
+  });
+
   app.setGlobalPrefix('api/v1');
 
   app.useGlobalPipes(
