@@ -13,14 +13,23 @@ import Redis from 'ioredis';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
         const url = config.get<string>('REDIS_URL');
-        if (url) return new Redis(url);
-        
-        return new Redis({
+        const options = {
+          lazyConnect: true,
+          maxRetriesPerRequest: 3,
+        };
+
+        const client = url ? new Redis(url, options) : new Redis({
           host: config.get<string>('redis.host'),
           port: config.get<number>('redis.port'),
           password: config.get<string>('redis.password') || undefined,
-          lazyConnect: true,
+          ...options,
         });
+
+        client.on('error', (err) => {
+          console.error('Redis Connection Error:', err.message);
+        });
+
+        return client;
       },
     },
     RedisService,
