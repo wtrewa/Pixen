@@ -67,7 +67,7 @@ export class CashfreeProvider {
       const response = await this.cashfree.PGCreateOrder(request);
       return response.data;
     } catch (error) {
-      this.logger.error('Cashfree Create Order Error:', error.response?.data || error.message);
+      this.logger.error('Cashfree Create Order Error:', JSON.stringify(error.response?.data || error.message, null, 2));
       throw error;
     }
   }

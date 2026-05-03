@@ -42,8 +42,12 @@ export class PaymentsService {
       if (!booking) throw new NotFoundException('Booking not found');
       if (booking.customerId !== userId) throw new UnauthorizedException();
 
-      let amount = dto.type === 'ADVANCE' ? booking.advanceAmount : booking.totalAmount - booking.advanceAmount;
+      let amount = dto.type === 'ADVANCE' ? Number(booking.advanceAmount) : Number(booking.totalAmount) - Number(booking.advanceAmount);
       
+      if (amount <= 0) {
+        throw new BadRequestException(`Invalid payment amount: ${amount}. Please check the booking details.`);
+      }
+
       const gateway = this.config.get<string>('PAYMENT_GATEWAY', 'CASHFREE');
 
       if (gateway === 'RAZORPAY') {
@@ -63,16 +67,19 @@ export class PaymentsService {
         );
         return { message: 'Payment order created', data: { payment, order } };
       } else {
-        const order = await this.cashfree.createOrder({
+        const orderData = {
           orderId: `ORDER_${booking.id.substring(0, 8)}_${Date.now()}`,
           amount,
           currency: 'INR',
           customerId: booking.customerId,
           customerName: booking.customer?.fullName || 'Customer',
           customerPhone: booking.customer?.phone || '9999999999',
-          customerEmail: booking.customer?.email || '',
+          customerEmail: booking.customer?.email || 'customer@pixen.in',
           returnUrl: `${this.config.get('FRONTEND_URL')}/payments/${booking.id}?payment_id={order_id}`,
-        });
+        };
+
+        this.logger.debug(`Initiating Cashfree Order: ${JSON.stringify(orderData)}`);
+        const order = await this.cashfree.createOrder(orderData);
 
         const payment = await this.paymentRepo.save(
           this.paymentRepo.create({
