@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   UnauthorizedException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -22,6 +23,8 @@ import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+
   constructor(
     @InjectRepository(Payment) private readonly paymentRepo: Repository<Payment>,
     @InjectRepository(Booking) private readonly bookingRepo: Repository<Booking>,
@@ -59,14 +62,16 @@ export class PaymentsService {
       );
       return { message: 'Payment order created', data: { payment, order } };
     } else {
-      const order = await this.cashfree.createOrder(
-        amount, 
-        'INR', 
-        booking.customerId, 
-        booking.customer?.phone || '9999999999', 
-        booking.customer?.email, 
-        booking.id
-      );
+      const order = await this.cashfree.createOrder({
+        orderId: `ORDER_${booking.id}_${Date.now()}`,
+        amount,
+        currency: 'INR',
+        customerId: booking.customerId,
+        customerName: booking.customer?.fullName || 'Customer',
+        customerPhone: booking.customer?.phone || '9999999999',
+        customerEmail: booking.customer?.email || '',
+        returnUrl: `${this.config.get('FRONTEND_URL')}/payments/${booking.id}?payment_id={order_id}`,
+      });
 
       const payment = await this.paymentRepo.save(
         this.paymentRepo.create({
@@ -93,8 +98,8 @@ export class PaymentsService {
 
   async verify(dto: VerifyPaymentDto) {
     if (dto.cashfreeOrderId) {
-      const order = await this.cashfree.getOrder(dto.cashfreeOrderId);
-      const lastPayment = order[0]; // Assuming the latest payment
+      const orderPayments = await this.cashfree.getOrder(dto.cashfreeOrderId);
+      const lastPayment = orderPayments?.[0]; // Latest payment
       
       if (!lastPayment || lastPayment.payment_status !== 'SUCCESS') {
         throw new BadRequestException('Payment not successful or pending');
@@ -107,7 +112,7 @@ export class PaymentsService {
 
       await this.paymentRepo.update(payment.id, {
         status: PaymentStatus.SUCCESS,
-        gatewayPaymentId: lastPayment.cf_payment_id.toString(),
+        gatewayPaymentId: lastPayment.cf_payment_id?.toString(),
       });
 
       await this.bookingRepo.update(payment.bookingId, {
@@ -167,17 +172,31 @@ export class PaymentsService {
       return { received: true };
     }
 
-    // Cashfree Webhook (Basic implementation)
-    // In production, you should verify the signature using Cashfree.XClientSecret
-    const cfSignature = req.headers['x-cf-signature'] as string;
-    if (cfSignature) {
-      const { order_id, payment_status } = req.body.data.object;
-      if (payment_status === 'SUCCESS') {
-        const payment = await this.paymentRepo.findOne({ where: { gatewayOrderId: order_id } });
-        if (payment) {
-          await this.paymentRepo.update(payment.id, { status: PaymentStatus.SUCCESS });
-          await this.bookingRepo.update(payment.bookingId, { status: BookingStatus.CONFIRMED });
+    // Cashfree Webhook
+    const cfSignature = req.headers['x-webhook-signature'] as string;
+    const cfTimestamp = req.headers['x-webhook-timestamp'] as string;
+    
+    if (cfSignature && cfTimestamp) {
+      try {
+        const rawBody = JSON.stringify(req.body);
+        this.cashfree.verifyWebhook(cfSignature, rawBody, cfTimestamp);
+        
+        const { order, payment } = req.body.data;
+        if (payment.payment_status === 'SUCCESS') {
+          const paymentRecord = await this.paymentRepo.findOne({ 
+            where: { gatewayOrderId: order.order_id } 
+          });
+          if (paymentRecord) {
+            await this.paymentRepo.update(paymentRecord.id, { 
+              status: PaymentStatus.SUCCESS,
+              gatewayPaymentId: payment.cf_payment_id.toString()
+            });
+            await this.bookingRepo.update(paymentRecord.bookingId, { status: BookingStatus.CONFIRMED });
+          }
         }
+      } catch (err) {
+        this.logger.error('Cashfree Webhook Verification Failed:', err.message);
+        throw new UnauthorizedException('Invalid Cashfree webhook signature');
       }
       return { received: true };
     }
