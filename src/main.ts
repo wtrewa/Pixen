@@ -54,7 +54,7 @@ async function bootstrap() {
     swaggerOptions: { persistAuthorization: true },
   });
 
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
 
   const logger = new (winston.createLogger(winstonConfig).constructor as any)(winstonConfig);
   console.log(`\n  API:    http://localhost:${port}/api/v1`);
