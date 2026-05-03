@@ -17,6 +17,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
           logging: config.get<boolean>('database.logging'),
           entities: [__dirname + '/../**/*.entity{.ts,.js}'],
           ssl: isProduction ? { rejectUnauthorized: false } : false,
+          connectTimeoutMS: 10000,
+          extra: { connectionTimeoutMillis: 10000, max: 5 },
         };
         if (url) {
           return { ...base, url };
