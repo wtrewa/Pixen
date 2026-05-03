@@ -83,4 +83,8 @@ export class Booking extends BaseEntity {
   @ApiProperty({ example: 0, description: 'Index of the team assigned (0 to teamCount-1)' })
   @Column({ name: 'team_index', default: 0 })
   teamIndex: number;
+
+  @ApiProperty({ example: false, description: 'Whether the final balance has been paid' })
+  @Column({ name: 'is_final_paid', default: false })
+  isFinalPaid: boolean;
 }

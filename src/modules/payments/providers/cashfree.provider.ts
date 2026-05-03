@@ -6,6 +6,7 @@ import { Cashfree, CFEnvironment, CreateOrderRequest, OrderEntity } from 'cashfr
 export class CashfreeProvider {
   private readonly logger = new Logger(CashfreeProvider.name);
   private cashfree: Cashfree;
+  private hasCredentials: boolean;
 
   constructor(private configService: ConfigService) {
     this.init();
@@ -16,11 +17,17 @@ export class CashfreeProvider {
     const clientSecret = this.configService.get<string>('CASHFREE_CLIENT_SECRET');
     const environment = this.configService.get<string>('CASHFREE_ENV', 'sandbox');
 
+    this.hasCredentials = !!(clientId && clientSecret);
+
     this.cashfree = new Cashfree(
       environment === 'production' ? CFEnvironment.PRODUCTION : CFEnvironment.SANDBOX,
       clientId,
-      clientSecret
+      clientSecret,
     );
+
+    if (!this.hasCredentials) {
+      this.logger.warn('CASHFREE_CLIENT_ID / CASHFREE_CLIENT_SECRET not set — using mock responses');
+    }
   }
 
   async createOrder(data: {
@@ -33,11 +40,8 @@ export class CashfreeProvider {
     customerPhone: string;
     returnUrl: string;
   }): Promise<OrderEntity> {
-    const isDev = this.configService.get<string>('NODE_ENV') !== 'production';
-
-    // Mock response for dev if no credentials
-    if (!this.cashfree.XClientId || isDev) {
-      this.logger.warn('Using mock Cashfree order for development');
+    if (!this.hasCredentials) {
+      this.logger.warn(`[MOCK] createOrder ${data.orderId}`);
       return {
         cf_order_id: 'mock_cf_order_' + Date.now(),
         order_id: data.orderId,
@@ -73,9 +77,9 @@ export class CashfreeProvider {
   }
 
   async getOrder(orderId: string): Promise<any> {
-    const isDev = this.configService.get<string>('NODE_ENV') !== 'production';
-    if (!this.cashfree.XClientId || isDev) {
-      return { order_status: 'PAID' }; // Mock success
+    if (!this.hasCredentials) {
+      this.logger.warn(`[MOCK] getOrder ${orderId}`);
+      return [{ payment_status: 'SUCCESS', cf_payment_id: `mock_cf_${Date.now()}` }];
     }
 
     try {

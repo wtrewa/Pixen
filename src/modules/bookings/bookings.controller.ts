@@ -6,6 +6,7 @@ import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateBookingStatusDto } from './dto/update-booking-status.dto';
 import { DeliverBookingDto } from './dto/deliver-booking.dto';
+import { ConfirmBookingDto } from './dto/confirm-booking.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums/roles.enum';
@@ -58,6 +59,19 @@ export class BookingsController {
   @ApiResponse({ status: 200, type: Booking })
   findOne(@Param('id') id: string, @CurrentUser() user: User) {
     return this.bookingsService.findOne(id, user);
+  }
+
+  @Patch(':id/confirm')
+  @UseGuards(JwtAuthGuard)
+  @Roles(Role.VENDOR, Role.ADMIN)
+  @ApiOperation({ summary: 'Vendor accepts booking and sets advance amount required' })
+  @ApiResponse({ status: 200, description: 'Booking confirmed with advance amount set', type: Booking })
+  confirm(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+    @Body() dto: ConfirmBookingDto,
+  ) {
+    return this.bookingsService.confirmByVendor(id, user, dto);
   }
 
   @Patch(':id/status')

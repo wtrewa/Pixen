@@ -9,6 +9,7 @@ import { BookingsRepository } from './bookings.repository';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateBookingStatusDto } from './dto/update-booking-status.dto';
 import { DeliverBookingDto } from './dto/deliver-booking.dto';
+import { ConfirmBookingDto } from './dto/confirm-booking.dto';
 import { assertValidTransition } from './state-machine/booking.state-machine';
 import { QUEUES } from '../../common/constants';
 import { Role } from '../../common/enums/roles.enum';
@@ -80,6 +81,31 @@ export class BookingsService {
 
   findVendorBookings(vendorId: string, page: number, limit: number) {
     return this.bookingsRepository.findByVendor(vendorId, page, limit);
+  }
+
+  async confirmByVendor(id: string, user: User, dto: ConfirmBookingDto) {
+    const booking = await this.bookingsRepository.findById(id);
+    if (!booking) throw new NotFoundException('Booking not found');
+
+    if (user.role !== Role.ADMIN && booking.vendor?.userId !== user.id) {
+      throw new ForbiddenException('Only the assigned vendor can confirm this booking');
+    }
+
+    assertValidTransition(booking.status, BookingStatus.CONFIRMED);
+
+    const updated = await this.bookingsRepository.update(id, {
+      status: BookingStatus.CONFIRMED,
+      advanceAmount: dto.advanceAmount,
+    });
+
+    await this.notifyQueue.add('booking-status-changed', {
+      bookingId: id,
+      newStatus: BookingStatus.CONFIRMED,
+      customerId: booking.customerId,
+      vendorId: booking.vendorId,
+    });
+
+    return { message: 'Booking confirmed. Customer can now pay the advance to secure the date.', data: updated };
   }
 
   async updateStatus(id: string, user: User, dto: UpdateBookingStatusDto) {

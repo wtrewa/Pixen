@@ -16,6 +16,7 @@ import { VerifyPaymentDto } from './dto/verify-payment.dto';
 import {
   PaymentStatus,
   PaymentGateway,
+  PaymentType,
 } from '../../common/enums/payment-status.enum';
 import { BookingStatus } from '../../common/enums/booking-status.enum';
 import { Request } from 'express';
@@ -35,15 +36,39 @@ export class PaymentsService {
 
   async initiate(userId: string, dto: InitiatePaymentDto) {
     try {
-      const booking = await this.bookingRepo.findOne({ 
+      const booking = await this.bookingRepo.findOne({
         where: { id: dto.bookingId },
-        relations: ['customer'] 
+        relations: ['customer']
       });
       if (!booking) throw new NotFoundException('Booking not found');
       if (booking.customerId !== userId) throw new UnauthorizedException();
 
-      let amount = dto.type === 'ADVANCE' ? Number(booking.advanceAmount) : Number(booking.totalAmount) - Number(booking.advanceAmount);
+      // Enforce booking status guards
+      if (dto.type === PaymentType.ADVANCE && booking.status !== BookingStatus.CONFIRMED) {
+        throw new BadRequestException('Advance payment can only be initiated after the vendor confirms the booking.');
+      }
       
+      // ALLOW early final payment if advance is paid
+      const allowedForFinal = [BookingStatus.ADVANCE_PAID, BookingStatus.SHOOT_COMPLETED, BookingStatus.DELIVERED];
+      if (dto.type === PaymentType.FINAL && !allowedForFinal.includes(booking.status)) {
+        throw new BadRequestException('Final payment can only be initiated after the advance payment is completed.');
+      }
+
+      // Double-pay guard + Auto-repair
+      const alreadyPaid = await this.paymentRepo.findOne({
+        where: { bookingId: dto.bookingId, type: dto.type, status: PaymentStatus.SUCCESS },
+      });
+
+      if (alreadyPaid) {
+        // IDEMPOTENCY: If DB says success but booking status or isFinalPaid is stale, repair it now
+        await this.handleSuccessfulPayment(dto.bookingId, alreadyPaid);
+        throw new BadRequestException(`${dto.type} payment has already been completed for this booking.`);
+      }
+
+      let amount = dto.type === PaymentType.ADVANCE
+        ? Number(booking.advanceAmount)
+        : Number(booking.totalAmount) - Number(booking.advanceAmount);
+
       if (amount <= 0) {
         throw new BadRequestException(`Invalid payment amount: ${amount}. Please check the booking details.`);
       }
@@ -51,10 +76,6 @@ export class PaymentsService {
       const gateway = this.config.get<string>('PAYMENT_GATEWAY', 'CASHFREE');
 
       if (gateway === 'RAZORPAY') {
-        // Safety check for testing: Razorpay doesn't allow 0 amount
-        if (amount <= 0 && !this.razorpay['client']) {
-          amount = 500; 
-        }
         const order = await this.razorpay.createOrder(amount, 'INR', booking.id);
         const payment = await this.paymentRepo.save(
           this.paymentRepo.create({
@@ -78,9 +99,7 @@ export class PaymentsService {
           returnUrl: `${this.config.get('FRONTEND_URL')}/payments/${booking.id}?payment_id={order_id}`,
         };
 
-        this.logger.debug(`Initiating Cashfree Order: ${JSON.stringify(orderData)}`);
         const order = await this.cashfree.createOrder(orderData);
-
         const payment = await this.paymentRepo.save(
           this.paymentRepo.create({
             bookingId: booking.id,
@@ -95,23 +114,23 @@ export class PaymentsService {
           message: 'Payment order created', 
           data: { 
             payment, 
-            order: {
-              ...order,
-              paymentSessionId: order.payment_session_id
-            } 
+            order: { ...order, paymentSessionId: order.payment_session_id } 
           } 
         };
       }
     } catch (error) {
-      this.logger.error(`Payment Initiation Failed: ${error.message}`, error.stack);
+      this.logger.error(`Payment Initiation Failed: ${error.message}`);
       throw error;
     }
   }
 
   async verify(dto: VerifyPaymentDto) {
+    let paymentId: string;
+    let bookingId: string;
+
     if (dto.cashfreeOrderId) {
       const orderPayments = await this.cashfree.getOrder(dto.cashfreeOrderId);
-      const lastPayment = orderPayments?.[0]; // Latest payment
+      const lastPayment = orderPayments?.[0];
       
       if (!lastPayment || lastPayment.payment_status !== 'SUCCESS') {
         throw new BadRequestException('Payment not successful or pending');
@@ -126,26 +145,15 @@ export class PaymentsService {
         status: PaymentStatus.SUCCESS,
         gatewayPaymentId: lastPayment.cf_payment_id?.toString(),
       });
-
-      await this.bookingRepo.update(payment.bookingId, {
-        status: BookingStatus.CONFIRMED,
-      });
-
-      return { message: 'Payment verified', data: { paymentId: payment.id } };
-    }
-
-    // Razorpay Flow
-    if (dto.razorpayOrderId && dto.razorpayPaymentId && dto.razorpaySignature) {
-      const isValid = this.razorpay.verifyPaymentSignature(
-        dto.razorpayOrderId,
-        dto.razorpayPaymentId,
-        dto.razorpaySignature,
-      );
+      
+      paymentId = payment.id;
+      bookingId = payment.bookingId;
+      await this.handleSuccessfulPayment(bookingId, { ...payment, status: PaymentStatus.SUCCESS });
+    } else if (dto.razorpayOrderId && dto.razorpayPaymentId && dto.razorpaySignature) {
+      const isValid = this.razorpay.verifyPaymentSignature(dto.razorpayOrderId, dto.razorpayPaymentId, dto.razorpaySignature);
       if (!isValid) throw new BadRequestException('Payment verification failed');
 
-      const payment = await this.paymentRepo.findOne({
-        where: { gatewayOrderId: dto.razorpayOrderId },
-      });
+      const payment = await this.paymentRepo.findOne({ where: { gatewayOrderId: dto.razorpayOrderId } });
       if (!payment) throw new NotFoundException('Payment record not found');
 
       await this.paymentRepo.update(payment.id, {
@@ -154,66 +162,80 @@ export class PaymentsService {
         gatewaySignature: dto.razorpaySignature,
       });
 
-      await this.bookingRepo.update(payment.bookingId, {
-        status: BookingStatus.CONFIRMED,
-      });
-
-      return { message: 'Payment verified', data: { paymentId: payment.id } };
+      paymentId = payment.id;
+      bookingId = payment.bookingId;
+      await this.handleSuccessfulPayment(bookingId, { ...payment, status: PaymentStatus.SUCCESS });
+    } else {
+      throw new BadRequestException('Invalid verification data');
     }
 
-    throw new BadRequestException('Invalid verification data');
+    return { message: 'Payment verified', data: { paymentId } };
   }
 
   async handleWebhook(req: Request) {
-    // Razorpay Webhook
     const rzpSignature = req.headers['x-razorpay-signature'] as string;
     if (rzpSignature) {
       const rawBody = JSON.stringify(req.body);
-      const isValid = this.razorpay.verifyWebhookSignature(rawBody, rzpSignature);
-      if (!isValid) throw new UnauthorizedException('Invalid Razorpay webhook signature');
-
-      const event = req.body?.event;
-      if (event === 'payment.captured') {
-        const orderId = req.body?.payload?.payment?.entity?.order_id;
-        const payment = await this.paymentRepo.findOne({ where: { gatewayOrderId: orderId } });
-        if (payment) {
-          await this.paymentRepo.update(payment.id, { status: PaymentStatus.SUCCESS });
-          await this.bookingRepo.update(payment.bookingId, { status: BookingStatus.CONFIRMED });
+      if (this.razorpay.verifyWebhookSignature(rawBody, rzpSignature)) {
+        const event = req.body?.event;
+        if (event === 'payment.captured') {
+          const orderId = req.body?.payload?.payment?.entity?.order_id;
+          const payment = await this.paymentRepo.findOne({ where: { gatewayOrderId: orderId } });
+          if (payment) {
+            await this.paymentRepo.update(payment.id, { status: PaymentStatus.SUCCESS });
+            await this.handleSuccessfulPayment(payment.bookingId, { ...payment, status: PaymentStatus.SUCCESS });
+          }
         }
+        return { received: true };
       }
-      return { received: true };
     }
 
-    // Cashfree Webhook
     const cfSignature = req.headers['x-webhook-signature'] as string;
     const cfTimestamp = req.headers['x-webhook-timestamp'] as string;
-    
     if (cfSignature && cfTimestamp) {
       try {
-        const rawBody = JSON.stringify(req.body);
-        this.cashfree.verifyWebhook(cfSignature, rawBody, cfTimestamp);
-        
+        this.cashfree.verifyWebhook(cfSignature, JSON.stringify(req.body), cfTimestamp);
         const { order, payment } = req.body.data;
         if (payment.payment_status === 'SUCCESS') {
-          const paymentRecord = await this.paymentRepo.findOne({ 
-            where: { gatewayOrderId: order.order_id } 
-          });
+          const paymentRecord = await this.paymentRepo.findOne({ where: { gatewayOrderId: order.order_id } });
           if (paymentRecord) {
             await this.paymentRepo.update(paymentRecord.id, { 
               status: PaymentStatus.SUCCESS,
               gatewayPaymentId: payment.cf_payment_id.toString()
             });
-            await this.bookingRepo.update(paymentRecord.bookingId, { status: BookingStatus.CONFIRMED });
+            await this.handleSuccessfulPayment(paymentRecord.bookingId, { ...paymentRecord, status: PaymentStatus.SUCCESS });
           }
         }
       } catch (err) {
-        this.logger.error('Cashfree Webhook Verification Failed:', err.message);
-        throw new UnauthorizedException('Invalid Cashfree webhook signature');
+        this.logger.error('Cashfree Webhook Failed:', err.message);
       }
       return { received: true };
     }
 
     return { received: false };
+  }
+
+  private async handleSuccessfulPayment(bookingId: string, payment: Payment) {
+    const booking = await this.bookingRepo.findOne({ where: { id: bookingId } });
+    if (!booking) return;
+
+    const targetStatus = payment.type === PaymentType.ADVANCE 
+      ? BookingStatus.ADVANCE_PAID 
+      : BookingStatus.COMPLETED;
+
+    const isFinalPayment = payment.type === PaymentType.FINAL;
+    const shouldUpdateStatus = 
+      (payment.type === PaymentType.ADVANCE && booking.status === BookingStatus.CONFIRMED) ||
+      (isFinalPayment && booking.status === BookingStatus.DELIVERED);
+
+    const updateData: Partial<Booking> = {};
+    if (shouldUpdateStatus) updateData.status = targetStatus;
+    if (isFinalPayment && !booking.isFinalPaid) updateData.isFinalPaid = true;
+
+    if (Object.keys(updateData).length > 0) {
+      await this.bookingRepo.update(bookingId, updateData);
+      this.logger.log(`Booking ${bookingId} synchronized: ${JSON.stringify(updateData)}`);
+    }
   }
 
   findByBooking(bookingId: string) {

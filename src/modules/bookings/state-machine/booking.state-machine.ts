@@ -4,13 +4,14 @@ import { BookingStatus } from '../../../common/enums/booking-status.enum';
 type Transition = Partial<Record<BookingStatus, BookingStatus[]>>;
 
 const ALLOWED_TRANSITIONS: Transition = {
-  [BookingStatus.PENDING]: [BookingStatus.CONFIRMED, BookingStatus.CANCELLED],
-  [BookingStatus.CONFIRMED]: [BookingStatus.SHOOT_COMPLETED, BookingStatus.CANCELLED],
+  [BookingStatus.PENDING]:         [BookingStatus.CONFIRMED, BookingStatus.CANCELLED],
+  [BookingStatus.CONFIRMED]:       [BookingStatus.ADVANCE_PAID, BookingStatus.CANCELLED],
+  [BookingStatus.ADVANCE_PAID]:    [BookingStatus.SHOOT_COMPLETED, BookingStatus.CANCELLED],
   [BookingStatus.SHOOT_COMPLETED]: [BookingStatus.DELIVERED, BookingStatus.CANCELLED],
-  [BookingStatus.DELIVERED]: [BookingStatus.COMPLETED],
-  [BookingStatus.COMPLETED]: [BookingStatus.REFUNDED],
-  [BookingStatus.CANCELLED]: [BookingStatus.REFUNDED],
-  [BookingStatus.REFUNDED]: [],
+  [BookingStatus.DELIVERED]:       [BookingStatus.COMPLETED],
+  [BookingStatus.COMPLETED]:       [BookingStatus.REFUNDED],
+  [BookingStatus.CANCELLED]:       [BookingStatus.REFUNDED],
+  [BookingStatus.REFUNDED]:        [],
 };
 
 export function assertValidTransition(from: BookingStatus, to: BookingStatus): void {
