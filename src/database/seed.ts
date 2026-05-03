@@ -217,6 +217,9 @@ async function seed() {
   await AppDataSource.initialize();
   console.log('✅ Connected.\n');
 
+  const adminEmail = process.env.ADMIN_EMAIL || 'admin@pixen.com';
+  const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@1234';
+
   const userRepo = AppDataSource.getRepository('users');
   const vendorRepo = AppDataSource.getRepository('vendors');
   const serviceRepo = AppDataSource.getRepository('vendor_services');
@@ -226,21 +229,21 @@ async function seed() {
   const postRepo = AppDataSource.getRepository(Post);
 
   const passwordHash = await bcrypt.hash('Test@1234', 10);
-  const adminPasswordHash = await bcrypt.hash('Admin@1234', 10);
+  const adminPasswordHash = await bcrypt.hash(adminPassword, 10);
   
   // 1. Create a sample admin
-  let admin = await userRepo.findOne({ where: { email: 'admin@pixen.com' } });
+  let admin = await userRepo.findOne({ where: { email: adminEmail } });
   if (!admin) {
     admin = await userRepo.save(userRepo.create({
       fullName: 'Pixen Administrator',
-      email: 'admin@pixen.com',
+      email: adminEmail,
       password: adminPasswordHash,
       role: 'SUPER_ADMIN',
       isActive: true,
       isEmailVerified: true,
       provider: 'local',
     }));
-    console.log('✅ Created Super Admin: admin@pixen.com');
+    console.log(`✅ Created Super Admin: ${adminEmail}`);
   }
 
   // 2. Create a sample customer
