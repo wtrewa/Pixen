@@ -34,65 +34,70 @@ export class PaymentsService {
   ) {}
 
   async initiate(userId: string, dto: InitiatePaymentDto) {
-    const booking = await this.bookingRepo.findOne({ 
-      where: { id: dto.bookingId },
-      relations: ['customer'] 
-    });
-    if (!booking) throw new NotFoundException('Booking not found');
-    if (booking.customerId !== userId) throw new UnauthorizedException();
-
-    let amount = dto.type === 'ADVANCE' ? booking.advanceAmount : booking.totalAmount - booking.advanceAmount;
-    
-    const gateway = this.config.get<string>('PAYMENT_GATEWAY', 'CASHFREE');
-
-    if (gateway === 'RAZORPAY') {
-      // Safety check for testing: Razorpay doesn't allow 0 amount
-      if (amount <= 0 && !this.razorpay['client']) {
-        amount = 500; 
-      }
-      const order = await this.razorpay.createOrder(amount, 'INR', booking.id);
-      const payment = await this.paymentRepo.save(
-        this.paymentRepo.create({
-          bookingId: booking.id,
-          amount,
-          type: dto.type,
-          gateway: PaymentGateway.RAZORPAY,
-          gatewayOrderId: (order as any).id,
-        }),
-      );
-      return { message: 'Payment order created', data: { payment, order } };
-    } else {
-      const order = await this.cashfree.createOrder({
-        orderId: `ORDER_${booking.id}_${Date.now()}`,
-        amount,
-        currency: 'INR',
-        customerId: booking.customerId,
-        customerName: booking.customer?.fullName || 'Customer',
-        customerPhone: booking.customer?.phone || '9999999999',
-        customerEmail: booking.customer?.email || '',
-        returnUrl: `${this.config.get('FRONTEND_URL')}/payments/${booking.id}?payment_id={order_id}`,
+    try {
+      const booking = await this.bookingRepo.findOne({ 
+        where: { id: dto.bookingId },
+        relations: ['customer'] 
       });
+      if (!booking) throw new NotFoundException('Booking not found');
+      if (booking.customerId !== userId) throw new UnauthorizedException();
 
-      const payment = await this.paymentRepo.save(
-        this.paymentRepo.create({
-          bookingId: booking.id,
+      let amount = dto.type === 'ADVANCE' ? booking.advanceAmount : booking.totalAmount - booking.advanceAmount;
+      
+      const gateway = this.config.get<string>('PAYMENT_GATEWAY', 'CASHFREE');
+
+      if (gateway === 'RAZORPAY') {
+        // Safety check for testing: Razorpay doesn't allow 0 amount
+        if (amount <= 0 && !this.razorpay['client']) {
+          amount = 500; 
+        }
+        const order = await this.razorpay.createOrder(amount, 'INR', booking.id);
+        const payment = await this.paymentRepo.save(
+          this.paymentRepo.create({
+            bookingId: booking.id,
+            amount,
+            type: dto.type,
+            gateway: PaymentGateway.RAZORPAY,
+            gatewayOrderId: (order as any).id,
+          }),
+        );
+        return { message: 'Payment order created', data: { payment, order } };
+      } else {
+        const order = await this.cashfree.createOrder({
+          orderId: `ORDER_${booking.id.substring(0, 8)}_${Date.now()}`,
           amount,
-          type: dto.type,
-          gateway: PaymentGateway.CASHFREE,
-          gatewayOrderId: order.order_id,
-        }),
-      );
+          currency: 'INR',
+          customerId: booking.customerId,
+          customerName: booking.customer?.fullName || 'Customer',
+          customerPhone: booking.customer?.phone || '9999999999',
+          customerEmail: booking.customer?.email || '',
+          returnUrl: `${this.config.get('FRONTEND_URL')}/payments/${booking.id}?payment_id={order_id}`,
+        });
 
-      return { 
-        message: 'Payment order created', 
-        data: { 
-          payment, 
-          order: {
-            ...order,
-            paymentSessionId: order.payment_session_id
+        const payment = await this.paymentRepo.save(
+          this.paymentRepo.create({
+            bookingId: booking.id,
+            amount,
+            type: dto.type,
+            gateway: PaymentGateway.CASHFREE,
+            gatewayOrderId: order.order_id,
+          }),
+        );
+
+        return { 
+          message: 'Payment order created', 
+          data: { 
+            payment, 
+            order: {
+              ...order,
+              paymentSessionId: order.payment_session_id
+            } 
           } 
-        } 
-      };
+        };
+      }
+    } catch (error) {
+      this.logger.error(`Payment Initiation Failed: ${error.message}`, error.stack);
+      throw error;
     }
   }
 
