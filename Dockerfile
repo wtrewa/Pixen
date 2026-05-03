@@ -13,4 +13,4 @@ RUN npm ci --only=production && npm cache clean --force
 COPY --from=builder /app/dist ./dist
 RUN mkdir -p logs
 EXPOSE 3000
-CMD ["node", "dist/main"]
+CMD ["node", "--dns-result-order=ipv4first", "dist/main"]
