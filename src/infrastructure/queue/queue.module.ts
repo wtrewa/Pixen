@@ -8,13 +8,20 @@ import { QUEUES } from '../../common/constants';
     BullModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        redis: config.get<string>('REDIS_URL') || {
-          host: config.get<string>('redis.host'),
-          port: config.get<number>('redis.port'),
-          password: config.get<string>('redis.password') || undefined,
-        },
-      }),
+      useFactory: (config: ConfigService) => {
+        const url = config.get<string>('REDIS_URL');
+        if (url) {
+          // rediss:// enables TLS automatically in ioredis
+          return { redis: url };
+        }
+        return {
+          redis: {
+            host: config.get<string>('redis.host'),
+            port: config.get<number>('redis.port'),
+            password: config.get<string>('redis.password') || undefined,
+          },
+        };
+      },
     }),
     BullModule.registerQueue(
       { name: QUEUES.NOTIFICATIONS },

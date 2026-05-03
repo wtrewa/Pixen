@@ -11,5 +11,6 @@ ENV NODE_ENV=production
 COPY package*.json ./
 RUN npm ci --only=production && npm cache clean --force
 COPY --from=builder /app/dist ./dist
+RUN mkdir -p logs
 EXPOSE 3000
 CMD ["node", "dist/main"]
