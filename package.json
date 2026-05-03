@@ -18,6 +18,7 @@
     "test:cov": "jest --coverage",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "seed": "ts-node -r tsconfig-paths/register src/database/seed.ts",
+    "create-admin": "ts-node -r tsconfig-paths/register src/database/create-admin.ts",
     "activate": "ts-node -r tsconfig-paths/register src/database/activate-vendors.ts",
     "typeorm": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js",
     "migration:generate": "npm run typeorm -- migration:generate -d src/database/typeorm.config.ts",
