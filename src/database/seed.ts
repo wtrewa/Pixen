@@ -353,6 +353,7 @@ async function seed() {
       eventDate: new Date('2026-12-15T10:00:00Z'),
       eventLocation: 'Grand Palace, ' + data.city,
       totalAmount: services[0].price,
+      advanceAmount: 500,
       notes: 'Please arrive by 9 AM.',
     }));
 
@@ -365,6 +366,7 @@ async function seed() {
       eventDate: new Date('2027-01-20T11:00:00Z'),
       eventLocation: 'Outdoor Resort, ' + data.city,
       totalAmount: services[1].price,
+      advanceAmount: 500,
       notes: 'Waiting for your call to discuss the moodboard.',
     }));
 
@@ -377,6 +379,7 @@ async function seed() {
       eventDate: new Date('2026-03-10T09:00:00Z'),
       eventLocation: 'City Hotel, ' + data.city,
       totalAmount: services[0].price,
+      advanceAmount: 500,
     }));
 
     // 4. Create Sample Trending Reels (Posts)
