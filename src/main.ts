@@ -1,4 +1,5 @@
-import 'reflect-metadata'; 
+import 'reflect-metadata';
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
