@@ -13,9 +13,9 @@ export class CashfreeProvider {
   }
 
   private init() {
-    const clientId = this.configService.get<string>('CASHFREE_CLIENT_ID');
-    const clientSecret = this.configService.get<string>('CASHFREE_CLIENT_SECRET');
-    const environment = this.configService.get<string>('CASHFREE_ENV', 'sandbox');
+    const clientId = this.configService.get<string>('payment.cashfree.clientId');
+    const clientSecret = this.configService.get<string>('payment.cashfree.clientSecret');
+    const environment = this.configService.get<string>('payment.cashfree.env');
 
     this.hasCredentials = !!(clientId && clientSecret);
 

@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR, APP_FILTER } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import {
-  appConfig, databaseConfig, redisConfig, jwtConfig, storageConfig, emailConfig,
+  appConfig, databaseConfig, redisConfig, jwtConfig, storageConfig, emailConfig, paymentConfig, validationSchema,
 } from './config';
 import { DatabaseModule } from './database/database.module';
 import { RedisModule } from './infrastructure/redis/redis.module';
@@ -32,15 +32,19 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig, redisConfig, jwtConfig, storageConfig, emailConfig],
+      load: [appConfig, databaseConfig, redisConfig, jwtConfig, storageConfig, emailConfig, paymentConfig],
       envFilePath: '.env',
+      validationSchema,
     }),
-    ThrottlerModule.forRoot([
-      {
-        ttl: parseInt(process.env.THROTTLE_TTL, 10) || 60,
-        limit: parseInt(process.env.THROTTLE_LIMIT, 10) || 100,
-      },
-    ]),
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => [
+        {
+          ttl: config.get<number>('app.throttle.ttl'),
+          limit: config.get<number>('app.throttle.limit'),
+        },
+      ],
+    }),
     DatabaseModule,
     RedisModule,
     QueueModule,

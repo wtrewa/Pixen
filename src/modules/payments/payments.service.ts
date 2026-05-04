@@ -73,7 +73,7 @@ export class PaymentsService {
         throw new BadRequestException(`Invalid payment amount: ${amount}. Please check the booking details.`);
       }
 
-      const gateway = this.config.get<string>('PAYMENT_GATEWAY', 'CASHFREE');
+      const gateway = this.config.get<string>('payment.gateway');
 
       if (gateway === 'RAZORPAY') {
         const order = await this.razorpay.createOrder(amount, 'INR', booking.id);
