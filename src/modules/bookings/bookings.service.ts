@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
@@ -18,6 +19,8 @@ import { BookingStatus } from '../../common/enums/booking-status.enum';
 
 @Injectable()
 export class BookingsService {
+  private readonly logger = new Logger(BookingsService.name);
+
   constructor(
     private readonly bookingsRepository: BookingsRepository,
     @InjectQueue(QUEUES.NOTIFICATIONS) private readonly notifyQueue: Queue,
@@ -53,11 +56,11 @@ export class BookingsService {
     // Invalidate vendor list cache if any
     // Note: Bookings aren't heavily cached yet but we should be safe
     
-    await this.notifyQueue.add('booking-created', {
+    this.notifyQueue.add('booking-created', {
       bookingId: booking.id,
       customerId: customer.id,
       vendorId: dto.vendorId,
-    });
+    }).catch((err) => this.logger.warn(`notify queue error: ${err?.message}`));
 
     return { message: 'Booking created', data: booking };
   }
