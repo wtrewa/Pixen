@@ -8,7 +8,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
-        const url = config.get<string>('database.url');
+        let url = config.get<string>('database.url');
+        if (url && url.startsWith('//')) url = 'postgresql:' + url;
         const isProduction = process.env.NODE_ENV === 'production';
         const base = {
           type: 'postgres' as const,
