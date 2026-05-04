@@ -19,6 +19,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
           entities: [__dirname + '/../**/*.entity{.ts,.js}'],
           ssl: isProduction ? { rejectUnauthorized: false } : false,
           connectTimeoutMS: 10000,
+          retryAttempts: 5,
+          retryDelay: 3000,
           extra: { connectionTimeoutMillis: 10000, max: 5, family: 4 },
         };
         if (url) {
