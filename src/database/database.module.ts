@@ -10,14 +10,13 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
       useFactory: (config: ConfigService) => {
         let url = config.get<string>('database.url');
         if (url && url.startsWith('//')) url = 'postgresql:' + url;
-        const isProduction = process.env.NODE_ENV === 'production';
         const base = {
           type: 'postgres' as const,
           autoLoadEntities: true,
           synchronize: config.get<boolean>('database.sync'),
           logging: config.get<boolean>('database.logging'),
           entities: [__dirname + '/../**/*.entity{.ts,.js}'],
-          ssl: isProduction ? { rejectUnauthorized: false } : false,
+          ssl: url ? { rejectUnauthorized: false } : false,
           connectTimeoutMS: 10000,
           retryAttempts: 5,
           retryDelay: 3000,
