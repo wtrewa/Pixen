@@ -16,11 +16,16 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
           synchronize: config.get<boolean>('database.sync'),
           logging: config.get<boolean>('database.logging'),
           entities: [__dirname + '/../**/*.entity{.ts,.js}'],
-          ssl: url ? { rejectUnauthorized: false } : false,
+          ssl: false,
           connectTimeoutMS: 10000,
           retryAttempts: 5,
           retryDelay: 3000,
-          extra: { connectionTimeoutMillis: 10000, max: 5, family: 4 },
+          extra: {
+            connectionTimeoutMillis: 10000,
+            max: 5,
+            family: 4,
+            ...(url ? { ssl: { rejectUnauthorized: false } } : {}),
+          },
         };
         if (url) {
           return { ...base, url };
