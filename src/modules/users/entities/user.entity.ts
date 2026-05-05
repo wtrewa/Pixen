@@ -46,6 +46,12 @@ export class User extends BaseEntity {
   @Column({ name: 'is_email_verified', default: false })
   isEmailVerified: boolean;
 
+  @Column({ name: 'email_verification_token', nullable: true, select: false })
+  emailVerificationToken: string;
+
+  @Column({ name: 'email_verification_expires', nullable: true, type: 'timestamptz' })
+  emailVerificationExpires: Date;
+
   @Column({ nullable: true })
   avatar: string;
 

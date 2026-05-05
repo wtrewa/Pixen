@@ -11,6 +11,7 @@ import { GoogleStrategy } from './strategies/google.strategy';
 import { User } from '../users/entities/user.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { VendorsModule } from '../vendors/vendors.module';
+import { EmailModule } from '../../infrastructure/email/email.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { VendorsModule } from '../vendors/vendors.module';
     JwtModule.register({}),
     TypeOrmModule.forFeature([User, RefreshToken]),
     VendorsModule,
+    EmailModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, JwtRefreshStrategy, GoogleStrategy],

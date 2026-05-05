@@ -75,8 +75,8 @@ export class BookingsService {
     return booking;
   }
 
-  findMyBookings(customerId: string, page: number, limit: number) {
-    return this.bookingsRepository.findByCustomer(customerId, page, limit);
+  findMyBookings(customerId: string, page: number, limit: number, status?: string) {
+    return this.bookingsRepository.findByCustomer(customerId, page, limit, status as BookingStatus | undefined);
   }
 
   findVendorBookings(vendorId: string, page: number, limit: number) {

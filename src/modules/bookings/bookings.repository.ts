@@ -18,13 +18,14 @@ export class BookingsRepository {
     });
   }
 
-  async findByCustomer(customerId: string, page = 1, limit = 10) {
+  async findByCustomer(customerId: string, page = 1, limit = 10, status?: BookingStatus) {
     const { skip, take } = paginate(page, limit);
     const [data, total] = await this.repo.findAndCount({
-      where: { customerId },
+      where: { customerId, ...(status ? { status } : {}) },
       skip,
       take,
       relations: ['vendor', 'service'],
+      order: { createdAt: 'DESC' },
     });
     return buildPaginatedResult(data, total, page, limit);
   }

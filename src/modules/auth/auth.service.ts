@@ -2,17 +2,21 @@ import {
   Injectable,
   UnauthorizedException,
   ConflictException,
+  BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import { randomBytes } from 'crypto';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { User, AuthProvider } from '../users/entities/user.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { VendorsRepository } from '../vendors/vendors.repository';
+import { EmailService } from '../../infrastructure/email/email.service';
 import { Role } from '../../common/enums/roles.enum';
 
 interface OAuthProfile {
@@ -30,13 +34,22 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly vendorsRepository: VendorsRepository,
+    private readonly emailService: EmailService,
   ) {}
 
   async register(dto: RegisterDto) {
     const exists = await this.userRepo.findOne({ where: { email: dto.email } });
     if (exists) throw new ConflictException('Email already registered');
 
-    const user = this.userRepo.create(dto);
+    const verificationToken = randomBytes(32).toString('hex');
+    const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    const user = this.userRepo.create({
+      ...dto,
+      isEmailVerified: false,
+      emailVerificationToken: verificationToken,
+      emailVerificationExpires: verificationExpires,
+    });
     await this.userRepo.save(user);
 
     if (user.role === Role.VENDOR) {
@@ -50,18 +63,59 @@ export class AuthService {
       });
     }
 
+    await this.emailService.sendVerificationEmail(user.email, verificationToken);
+
+    return { message: 'Registration successful. Please check your email to verify your account.' };
+  }
+
+  async verifyEmail(token: string) {
+    const user = await this.userRepo.findOne({
+      where: { emailVerificationToken: token },
+      select: ['id', 'email', 'fullName', 'role', 'isActive', 'isEmailVerified', 'emailVerificationToken', 'emailVerificationExpires', 'avatar'],
+    });
+
+    if (!user) throw new BadRequestException('Invalid or expired verification token');
+    if (user.emailVerificationExpires < new Date()) {
+      throw new BadRequestException('Verification token has expired. Please request a new one.');
+    }
+
+    user.isEmailVerified = true;
+    user.emailVerificationToken = null;
+    user.emailVerificationExpires = null;
+    await this.userRepo.save(user);
+
     const tokens = await this.generateTokens(user);
-    return { message: 'Registration successful', data: { user, ...tokens } };
+    const { emailVerificationToken: _t, emailVerificationExpires: _e, ...safeUser } = user as any;
+    return { message: 'Email verified successfully', data: { user: safeUser, ...tokens } };
+  }
+
+  async resendVerification(email: string) {
+    const user = await this.userRepo.findOne({ where: { email } });
+    if (!user) throw new NotFoundException('No account found with this email');
+    if (user.isEmailVerified) throw new BadRequestException('Email is already verified');
+
+    const verificationToken = randomBytes(32).toString('hex');
+    const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    user.emailVerificationToken = verificationToken;
+    user.emailVerificationExpires = verificationExpires;
+    await this.userRepo.save(user);
+
+    await this.emailService.sendVerificationEmail(user.email, verificationToken);
+    return { message: 'Verification email sent. Please check your inbox.' };
   }
 
   async login(dto: LoginDto) {
     const user = await this.userRepo.findOne({
       where: { email: dto.email },
-      select: ['id', 'email', 'password', 'role', 'isActive', 'fullName'],
+      select: ['id', 'email', 'password', 'role', 'isActive', 'fullName', 'isEmailVerified'],
     });
 
     if (!user) throw new UnauthorizedException('Invalid credentials');
     if (!user.isActive) throw new UnauthorizedException('Account is deactivated');
+    if (!user.isEmailVerified) {
+      throw new UnauthorizedException('Please verify your email before logging in');
+    }
 
     const valid = await bcrypt.compare(dto.password, user.password);
     if (!valid) throw new UnauthorizedException('Invalid credentials');

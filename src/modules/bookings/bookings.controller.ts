@@ -37,8 +37,9 @@ export class BookingsController {
     @CurrentUser() user: User,
     @Query('page') page = 1,
     @Query('limit') limit = 10,
+    @Query('status') status?: string,
   ) {
-    return this.bookingsService.findMyBookings(user.id, +page, +limit);
+    return this.bookingsService.findMyBookings(user.id, +page, +limit, status);
   }
 
   @Get('vendor/:vendorId')
