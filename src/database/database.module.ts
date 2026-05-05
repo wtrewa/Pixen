@@ -8,17 +8,24 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
-        const url = config.get<string>('database.url');
-        const isProduction = process.env.NODE_ENV === 'production';
+        let url = config.get<string>('database.url');
+        if (url && url.startsWith('//')) url = 'postgresql:' + url;
         const base = {
           type: 'postgres' as const,
           autoLoadEntities: true,
           synchronize: config.get<boolean>('database.sync'),
           logging: config.get<boolean>('database.logging'),
           entities: [__dirname + '/../**/*.entity{.ts,.js}'],
-          ssl: isProduction ? { rejectUnauthorized: false } : false,
+          ssl: false,
           connectTimeoutMS: 10000,
-          extra: { connectionTimeoutMillis: 10000, max: 5, family: 4 },
+          retryAttempts: 5,
+          retryDelay: 3000,
+          extra: {
+            connectionTimeoutMillis: 10000,
+            max: 5,
+            family: 4,
+            ...(url ? { ssl: { rejectUnauthorized: false } } : {}),
+          },
         };
         if (url) {
           return { ...base, url };

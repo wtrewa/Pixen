@@ -12,5 +12,5 @@ COPY package*.json ./
 RUN npm ci --only=production && npm cache clean --force
 COPY --from=builder /app/dist ./dist
 RUN mkdir -p logs
-EXPOSE 3000
-CMD ["node", "--dns-result-order=ipv4first", "dist/main"]
+EXPOSE 8080
+CMD ["sh", "-c", "NODE_OPTIONS=--dns-result-order=ipv4first npm run start:prod"]

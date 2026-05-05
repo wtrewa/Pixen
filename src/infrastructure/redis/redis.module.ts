@@ -16,14 +16,27 @@ import Redis from 'ioredis';
         const options = {
           lazyConnect: true,
           maxRetriesPerRequest: 3,
+          family: 4,
         };
 
-        const client = url ? new Redis(url, options) : new Redis({
-          host: config.get<string>('redis.host'),
-          port: config.get<number>('redis.port'),
-          password: config.get<string>('redis.password') || undefined,
-          ...options,
-        });
+        let client: Redis;
+        if (url) {
+          const parsed = new URL(url);
+          client = new Redis({
+            host: parsed.hostname,
+            port: Number(parsed.port) || 6379,
+            password: parsed.password || undefined,
+            tls: url.startsWith('rediss://') ? { rejectUnauthorized: false } : undefined,
+            ...options,
+          });
+        } else {
+          client = new Redis({
+            host: config.get<string>('redis.host'),
+            port: config.get<number>('redis.port'),
+            password: config.get<string>('redis.password') || undefined,
+            ...options,
+          });
+        }
 
         client.on('error', (err) => {
           console.error('Redis Connection Error:', err.message);
