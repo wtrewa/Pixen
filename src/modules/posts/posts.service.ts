@@ -4,13 +4,16 @@ import { Repository } from 'typeorm';
 import { Post } from './entities/post.entity';
 import { CreatePostDto } from './dto/create-post.dto';
 import { VendorsRepository } from '../vendors/vendors.repository';
+import { StorageService } from '../../infrastructure/storage/storage.service';
 import { buildPaginatedResult } from '../../common/utils/pagination.util';
+import { PostType } from './entities/post.entity';
 
 @Injectable()
 export class PostsService {
   constructor(
     @InjectRepository(Post) private readonly postRepo: Repository<Post>,
     private readonly vendorsRepository: VendorsRepository,
+    private readonly storageService: StorageService,
   ) {}
 
   async getTrending(limit = 10) {
@@ -34,8 +37,29 @@ export class PostsService {
 
   async createPost(userId: string, dto: CreatePostDto) {
     const vendor = await this.vendorsRepository.findByUserId(userId);
-    if (!vendor) throw new ForbiddenException('Vendor profile not found');
-    const post = this.postRepo.create({ ...dto, vendorId: vendor.id });
+    const post = this.postRepo.create({ 
+      ...dto, 
+      userId,
+      vendorId: vendor?.id 
+    });
+    return this.postRepo.save(post);
+  }
+
+  async uploadPost(userId: string, file: Express.Multer.File, caption?: string, category?: string) {
+    const vendor = await this.vendorsRepository.findByUserId(userId);
+
+    const type = file.mimetype.startsWith('video/') ? PostType.VIDEO : PostType.IMAGE;
+    const url = await this.storageService.upload(file, 'posts');
+
+    const post = this.postRepo.create({
+      userId,
+      vendorId: vendor?.id,
+      type,
+      url,
+      caption,
+      category,
+    });
+
     return this.postRepo.save(post);
   }
 
@@ -49,8 +73,9 @@ export class PostsService {
   async deletePost(postId: string, userId: string) {
     const post = await this.postRepo.findOne({ where: { id: postId } });
     if (!post) throw new NotFoundException('Post not found');
-    const vendor = await this.vendorsRepository.findByUserId(userId);
-    if (!vendor || post.vendorId !== vendor.id) throw new ForbiddenException('Not your post');
+    
+    if (post.userId !== userId) throw new ForbiddenException('Not your post');
+    
     await this.postRepo.remove(post);
     return { message: 'Post deleted' };
   }

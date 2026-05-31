@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, ILike } from 'typeorm';
+import { Repository, ILike, In } from 'typeorm';
 import { Vendor } from './entities/vendor.entity';
 import { VendorService } from './entities/vendor-service.entity';
 import { VendorAvailability } from './entities/vendor-availability.entity';
+import { VendorEquipment } from './entities/vendor-equipment.entity';
+import { ServiceAddon } from './entities/service-addon.entity';
 import { QueryVendorDto } from './dto/query-vendor.dto';
 import { paginate, buildPaginatedResult } from '../../common/utils/pagination.util';
 
@@ -13,6 +15,8 @@ export class VendorsRepository {
     @InjectRepository(Vendor) private readonly vendorRepo: Repository<Vendor>,
     @InjectRepository(VendorService) private readonly serviceRepo: Repository<VendorService>,
     @InjectRepository(VendorAvailability) private readonly availabilityRepo: Repository<VendorAvailability>,
+    @InjectRepository(VendorEquipment) private readonly equipmentRepo: Repository<VendorEquipment>,
+    @InjectRepository(ServiceAddon) private readonly addonRepo: Repository<ServiceAddon>,
   ) {}
 
   async findAll(query: QueryVendorDto) {
@@ -105,5 +109,55 @@ export class VendorsRepository {
 
   deleteAvailability(id: string) {
     return this.availabilityRepo.delete(id);
+  }
+
+  // ── Equipment ──────────────────────────────────────────────────────────────
+
+  findEquipmentByVendor(vendorId: string) {
+    return this.equipmentRepo.find({ where: { vendorId }, order: { category: 'ASC' } });
+  }
+
+  findEquipmentById(id: string) {
+    return this.equipmentRepo.findOne({ where: { id } });
+  }
+
+  createEquipment(data: Partial<VendorEquipment>) {
+    return this.equipmentRepo.save(this.equipmentRepo.create(data));
+  }
+
+  async updateEquipment(id: string, data: Partial<VendorEquipment>) {
+    await this.equipmentRepo.update(id, data);
+    return this.findEquipmentById(id);
+  }
+
+  deleteEquipment(id: string) {
+    return this.equipmentRepo.delete(id);
+  }
+
+  // ── Service Add-ons ────────────────────────────────────────────────────────
+
+  findAddonsByVendor(vendorId: string) {
+    return this.addonRepo.find({ where: { vendorId, isActive: true }, order: { category: 'ASC' } });
+  }
+
+  findAddonById(id: string) {
+    return this.addonRepo.findOne({ where: { id } });
+  }
+
+  findAddonsByIds(ids: string[]) {
+    return this.addonRepo.find({ where: { id: In(ids) } });
+  }
+
+  createAddon(data: Partial<ServiceAddon>) {
+    return this.addonRepo.save(this.addonRepo.create(data));
+  }
+
+  async updateAddon(id: string, data: Partial<ServiceAddon>) {
+    await this.addonRepo.update(id, data);
+    return this.findAddonById(id);
+  }
+
+  deleteAddon(id: string) {
+    return this.addonRepo.delete(id);
   }
 }

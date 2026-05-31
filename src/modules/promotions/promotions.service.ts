@@ -53,4 +53,8 @@ export class PromotionsService {
     offer.isActive = !offer.isActive;
     return this.offerRepo.save(offer);
   }
+
+  async incrementUsage(id: string) {
+    await this.offerRepo.increment({ id }, 'usageCount', 1);
+  }
 }

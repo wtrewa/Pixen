@@ -22,6 +22,7 @@ import { HealthModule } from './modules/health/health.module';
 import { PostsModule } from './modules/posts/posts.module';
 import { PromotionsModule } from './modules/promotions/promotions.module';
 import { GalleriesModule } from './modules/galleries/galleries.module';
+import { CalendarModule } from './modules/calendar/calendar.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
@@ -62,6 +63,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
     PostsModule,
     PromotionsModule,
     GalleriesModule,
+    CalendarModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

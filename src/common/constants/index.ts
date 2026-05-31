@@ -5,6 +5,7 @@ export const QUEUES = {
   NOTIFICATIONS: 'notifications',
   EMAILS: 'emails',
   PAYMENTS: 'payments',
+  CALENDAR_SYNC: 'calendar_sync',
 } as const;
 
 export const CACHE_KEYS = {

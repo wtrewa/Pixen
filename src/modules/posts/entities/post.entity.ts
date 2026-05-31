@@ -2,6 +2,7 @@ import { Entity, Column, ManyToOne, JoinColumn } from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
 import { BaseEntity } from '../../../shared/base.entity';
 import { Vendor } from '../../vendors/entities/vendor.entity';
+import { User } from '../../users/entities/user.entity';
 
 export enum PostType {
   IMAGE = 'IMAGE',
@@ -10,11 +11,19 @@ export enum PostType {
 
 @Entity('posts')
 export class Post extends BaseEntity {
-  @ApiProperty({ example: 'uuid-v4-vendor-id' })
-  @Column({ name: 'vendor_id' })
+  @ApiProperty({ example: 'uuid-v4-user-id' })
+  @Column({ name: 'user_id' })
+  userId: string;
+
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'user_id' })
+  user: User;
+
+  @ApiProperty({ example: 'uuid-v4-vendor-id', required: false })
+  @Column({ name: 'vendor_id', nullable: true })
   vendorId: string;
 
-  @ManyToOne(() => Vendor, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Vendor, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'vendor_id' })
   vendor: Vendor;
 

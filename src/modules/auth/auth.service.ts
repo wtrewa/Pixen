@@ -41,13 +41,13 @@ export class AuthService {
     const exists = await this.userRepo.findOne({ where: { email: dto.email } });
     if (exists) throw new ConflictException('Email already registered');
 
-    const verificationToken = randomBytes(32).toString('hex');
-    const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const verificationExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
     const user = this.userRepo.create({
       ...dto,
       isEmailVerified: false,
-      emailVerificationToken: verificationToken,
+      emailVerificationToken: otp,
       emailVerificationExpires: verificationExpires,
     });
     await this.userRepo.save(user);
@@ -63,20 +63,22 @@ export class AuthService {
       });
     }
 
-    await this.emailService.sendVerificationEmail(user.email, verificationToken);
+    await this.emailService.sendOtpEmail(user.email, otp);
 
-    return { message: 'Registration successful. Please check your email to verify your account.' };
+    return { message: 'Registration successful. Please check your email for the verification code.' };
   }
 
-  async verifyEmail(token: string) {
+  async verifyEmail(email: string, code: string) {
     const user = await this.userRepo.findOne({
-      where: { emailVerificationToken: token },
+      where: { email, emailVerificationToken: code },
       select: ['id', 'email', 'fullName', 'role', 'isActive', 'isEmailVerified', 'emailVerificationToken', 'emailVerificationExpires', 'avatar'],
     });
 
-    if (!user) throw new BadRequestException('Invalid or expired verification token');
+    if (!user) throw new BadRequestException('Invalid or expired verification code');
+    if (user.isEmailVerified) return { message: 'Email already verified' };
+    
     if (user.emailVerificationExpires < new Date()) {
-      throw new BadRequestException('Verification token has expired. Please request a new one.');
+      throw new BadRequestException('Verification code has expired. Please request a new one.');
     }
 
     user.isEmailVerified = true;
@@ -94,15 +96,15 @@ export class AuthService {
     if (!user) throw new NotFoundException('No account found with this email');
     if (user.isEmailVerified) throw new BadRequestException('Email is already verified');
 
-    const verificationToken = randomBytes(32).toString('hex');
-    const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const verificationExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
-    user.emailVerificationToken = verificationToken;
+    user.emailVerificationToken = otp;
     user.emailVerificationExpires = verificationExpires;
     await this.userRepo.save(user);
 
-    await this.emailService.sendVerificationEmail(user.email, verificationToken);
-    return { message: 'Verification email sent. Please check your inbox.' };
+    await this.emailService.sendOtpEmail(user.email, otp);
+    return { message: 'Verification code sent. Please check your inbox.' };
   }
 
   async login(dto: LoginDto) {

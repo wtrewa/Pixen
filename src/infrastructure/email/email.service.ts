@@ -29,6 +29,121 @@ export class EmailService {
     }
   }
 
+  private getLayout(title: string, content: string): string {
+    return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>${title}</title>
+        </head>
+        <body style="margin: 0; padding: 0; background-color: #0F0F0F; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #FFFFFF; -webkit-font-smoothing: antialiased;">
+          <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #0F0F0F;">
+            <tr>
+              <td align="center" style="padding: 40px 0;">
+                <table border="0" cellpadding="0" cellspacing="0" width="600" style="max-width: 600px; background-color: #1A1A1A; border-radius: 32px; overflow: hidden; border: 1px solid rgba(200,169,106,0.15);">
+                  <!-- Header/Logo -->
+                  <tr>
+                    <td align="center" style="padding: 48px 40px 24px 40px;">
+                      <div style="font-size: 24px; font-weight: 800; color: #C8A96A; letter-spacing: 4px;">PIXEN</div>
+                      <div style="width: 40px; height: 1px; background-color: #C8A96A; margin: 16px auto 0; opacity: 0.3;"></div>
+                    </td>
+                  </tr>
+                  <!-- Body Content -->
+                  <tr>
+                    <td style="padding: 0 48px 48px 48px;">
+                      ${content}
+                    </td>
+                  </tr>
+                  <!-- Footer -->
+                  <tr>
+                    <td align="center" style="padding: 32px 48px; background-color: rgba(255,255,255,0.02); border-top: 1px solid rgba(255,255,255,0.03);">
+                      <p style="color: rgba(255,255,255,0.3); font-size: 11px; line-height: 1.8; margin: 0; letter-spacing: 0.5px; text-transform: uppercase;">
+                        &copy; ${new Date().getFullYear()} Pixen &middot; Luxury Photography Marketplace <br>
+                        Elevating how the world shares its finest moments.
+                      </p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </body>
+      </html>
+    `;
+  }
+
+  async sendOtpEmail(email: string, otp: string): Promise<void> {
+    this.logger.warn(`[OTP VERIFICATION] ${email} → ${otp}`);
+
+    const content = `
+      <h2 style="color: #FFFFFF; font-size: 24px; font-weight: 700; margin: 0 0 16px; text-align: center;">Verify Your Account</h2>
+      <p style="color: rgba(255,255,255,0.5); font-size: 15px; line-height: 1.6; margin: 0 0 32px; text-align: center;">
+        Welcome to the elite circle. Please use the verification code below to secure your identity. This code expires in 15 minutes.
+      </p>
+      <div style="background-color: rgba(200,169,106,0.08); border: 1px dashed rgba(200,169,106,0.4); border-radius: 16px; padding: 32px; text-align: center;">
+        <span style="font-family: 'Courier New', Courier, monospace; font-size: 42px; font-weight: 700; color: #C8A96A; letter-spacing: 12px; margin-left: 12px;">
+          ${otp}
+        </span>
+      </div>
+      <p style="color: rgba(255,255,255,0.3); font-size: 13px; margin: 32px 0 0; text-align: center;">
+        If you did not request this, please disregard this transmission.
+      </p>
+    `;
+
+    await this.send({
+      to: email,
+      subject: `[PIXEN] Verification Code: ${otp}`,
+      html: this.getLayout('Verification', content),
+    });
+  }
+
+  async sendWelcomeEmail(email: string, fullName: string): Promise<void> {
+    const content = `
+      <h2 style="color: #FFFFFF; font-size: 26px; font-weight: 700; margin: 0 0 16px; text-align: center;">Welcome, ${fullName}</h2>
+      <p style="color: rgba(255,255,255,0.6); font-size: 16px; line-height: 1.8; margin: 0 0 32px; text-align: center;">
+        You have successfully joined the world's most exclusive photography marketplace. 
+        Start exploring curated portfolios or showcase your own masterpieces to the world.
+      </p>
+      <div style="text-align: center;">
+        <a href="${this.config.get('FRONTEND_URL')}/dashboard" style="display: inline-block; background-color: #C8A96A; color: #0F0F0F; padding: 18px 40px; border-radius: 12px; font-weight: 700; font-size: 14px; text-decoration: none; letter-spacing: 1px; text-transform: uppercase;">
+          Enter Your Workspace
+        </a>
+      </div>
+    `;
+
+    await this.send({
+      to: email,
+      subject: 'Welcome to Pixen',
+      html: this.getLayout('Welcome to Pixen', content),
+    });
+  }
+
+  async sendGalleryDeliveryEmail(email: string, galleryTitle: string, accessLink: string): Promise<void> {
+    const content = `
+      <h2 style="color: #FFFFFF; font-size: 24px; font-weight: 700; margin: 0 0 16px; text-align: center;">Your Memories Have Arrived</h2>
+      <p style="color: rgba(255,255,255,0.5); font-size: 15px; line-height: 1.6; margin: 0 0 32px; text-align: center;">
+        Your collection "<strong>${galleryTitle}</strong>" is ready for viewing. 
+        Each shot has been curated to perfection. Experience them now in high resolution.
+      </p>
+      <div style="text-align: center;">
+        <a href="${accessLink}" style="display: inline-block; background-color: #FFFFFF; color: #0F0F0F; padding: 18px 40px; border-radius: 12px; font-weight: 700; font-size: 14px; text-decoration: none; letter-spacing: 1px; text-transform: uppercase;">
+          View Your Gallery
+        </a>
+      </div>
+      <p style="color: rgba(255,255,255,0.3); font-size: 13px; margin: 32px 0 0; text-align: center;">
+        Secure Access Provided by Pixen Delivery Engine.
+      </p>
+    `;
+
+    await this.send({
+      to: email,
+      subject: `Your Gallery is Ready: ${galleryTitle}`,
+      html: this.getLayout('Gallery Ready', content),
+    });
+  }
+
   async sendVerificationEmail(email: string, token: string): Promise<void> {
     const frontendUrl = this.config.get<string>('FRONTEND_URL') || 'http://localhost:3002';
     const verifyUrl = `${frontendUrl}/auth/verify?token=${token}`;

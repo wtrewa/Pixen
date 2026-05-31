@@ -17,7 +17,7 @@ import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { VerifyEmailDto } from './dto/verify-email.dto';
+import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -64,15 +64,15 @@ export class AuthController {
   @Public()
   @Post('verify-email')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Verify email with token from email link' })
-  verifyEmail(@Body() dto: VerifyEmailDto) {
-    return this.authService.verifyEmail(dto.token);
+  @ApiOperation({ summary: 'Verify email with 6-digit OTP' })
+  verifyEmail(@Body() dto: VerifyOtpDto) {
+    return this.authService.verifyEmail(dto.email, dto.code);
   }
 
   @Public()
   @Post('resend-verification')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Resend email verification link' })
+  @ApiOperation({ summary: 'Resend email verification code' })
   resendVerification(@Body() dto: ResendVerificationDto) {
     return this.authService.resendVerification(dto.email);
   }

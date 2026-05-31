@@ -7,6 +7,8 @@ import { VendorsService } from './vendors.service';
 import { CreateVendorDto } from './dto/create-vendor.dto';
 import { UpdateVendorDto } from './dto/update-vendor.dto';
 import { CreateServiceDto } from './dto/create-service.dto';
+import { CreateEquipmentDto } from './dto/create-equipment.dto';
+import { CreateAddonDto } from './dto/create-addon.dto';
 import { QueryVendorDto } from './dto/query-vendor.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -20,6 +22,43 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 @Controller('vendors')
 export class VendorsController {
   constructor(private readonly vendorsService: VendorsService) {}
+  
+  @Get('metadata/addon-categories')
+  @Public()
+  @ApiOperation({ summary: 'Get available add-on categories' })
+  getAddonCategories() {
+    return {
+      success: true,
+      data: [
+        { label: 'Camera / Gear', value: 'CAMERA' },
+        { label: 'Drone / Aerial', value: 'DRONE' },
+        { label: 'Gimbal / Stab', value: 'GIMBAL' },
+        { label: 'Lighting', value: 'LIGHTING' },
+        { label: 'Album / Print', value: 'ALBUM' },
+        { label: 'Extra Hours', value: 'HOUR' },
+        { label: 'Other', value: 'OTHER' },
+      ]
+    };
+  }
+
+  @Get('metadata/equipment-categories')
+  @Public()
+  @ApiOperation({ summary: 'Get available equipment categories' })
+  getEquipmentCategories() {
+    return {
+      success: true,
+      data: [
+        { label: 'Camera Body', value: 'CAMERA_BODY' },
+        { label: 'Lens', value: 'LENS' },
+        { label: 'Drone', value: 'DRONE' },
+        { label: 'Gimbal', value: 'GIMBAL' },
+        { label: 'Lighting', value: 'LIGHTING' },
+        { label: 'Audio', value: 'AUDIO' },
+        { label: 'Photobooth', value: 'PHOTOBOOTH' },
+        { label: 'Other', value: 'OTHER' },
+      ]
+    };
+  }
 
   @Post('register')
   @UseGuards(JwtAuthGuard)
@@ -133,5 +172,87 @@ export class VendorsController {
   @ApiResponse({ status: 204, description: 'Date unblocked' })
   unblockDate(@Param('availId') availId: string, @CurrentUser() user: User) {
     return this.vendorsService.unblockDate(availId, user.id);
+  }
+
+  // ── Equipment Catalog ──────────────────────────────────────────────────────
+
+  @Get(':id/equipment')
+  @Public()
+  @ApiOperation({ summary: 'Get vendor equipment catalog (public)' })
+  getEquipment(@Param('id') id: string) {
+    return this.vendorsService.getEquipment(id);
+  }
+
+  @Post(':id/equipment')
+  @UseGuards(JwtAuthGuard)
+  @Roles(Role.VENDOR)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Add equipment to vendor catalog' })
+  addEquipment(@Param('id') id: string, @CurrentUser() user: User, @Body() dto: CreateEquipmentDto) {
+    return this.vendorsService.addEquipment(id, user.id, dto);
+  }
+
+  @Patch('equipment/:equipmentId')
+  @UseGuards(JwtAuthGuard)
+  @Roles(Role.VENDOR)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update an equipment entry' })
+  updateEquipment(
+    @Param('equipmentId') equipmentId: string,
+    @CurrentUser() user: User,
+    @Body() dto: Partial<CreateEquipmentDto>,
+  ) {
+    return this.vendorsService.updateEquipment(equipmentId, user.id, dto);
+  }
+
+  @Delete('equipment/:equipmentId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(JwtAuthGuard)
+  @Roles(Role.VENDOR)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Remove equipment from catalog' })
+  removeEquipment(@Param('equipmentId') equipmentId: string, @CurrentUser() user: User) {
+    return this.vendorsService.removeEquipment(equipmentId, user.id);
+  }
+
+  // ── Service Add-ons ────────────────────────────────────────────────────────
+
+  @Get(':id/addons')
+  @Public()
+  @ApiOperation({ summary: 'Get available add-ons for this vendor (public)' })
+  getAddons(@Param('id') id: string) {
+    return this.vendorsService.getAddons(id);
+  }
+
+  @Post(':id/addons')
+  @UseGuards(JwtAuthGuard)
+  @Roles(Role.VENDOR)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create a new bookable add-on' })
+  addAddon(@Param('id') id: string, @CurrentUser() user: User, @Body() dto: CreateAddonDto) {
+    return this.vendorsService.addAddon(id, user.id, dto);
+  }
+
+  @Patch('addons/:addonId')
+  @UseGuards(JwtAuthGuard)
+  @Roles(Role.VENDOR)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update an add-on (price, name, active status)' })
+  updateAddon(
+    @Param('addonId') addonId: string,
+    @CurrentUser() user: User,
+    @Body() dto: Partial<CreateAddonDto>,
+  ) {
+    return this.vendorsService.updateAddon(addonId, user.id, dto);
+  }
+
+  @Delete('addons/:addonId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(JwtAuthGuard)
+  @Roles(Role.VENDOR)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Delete an add-on' })
+  removeAddon(@Param('addonId') addonId: string, @CurrentUser() user: User) {
+    return this.vendorsService.removeAddon(addonId, user.id);
   }
 }

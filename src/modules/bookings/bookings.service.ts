@@ -1,4 +1,6 @@
 import {
+  BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
   ForbiddenException,
@@ -11,11 +13,20 @@ import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateBookingStatusDto } from './dto/update-booking-status.dto';
 import { DeliverBookingDto } from './dto/deliver-booking.dto';
 import { ConfirmBookingDto } from './dto/confirm-booking.dto';
+import { InviteCollaboratorDto } from './dto/invite-collaborator.dto';
+import { RespondCollaboratorDto } from './dto/respond-collaborator.dto';
+import { QuoteCustomRequestDto } from './dto/quote-custom-request.dto';
+import { RespondCustomRequestDto } from './dto/respond-custom-request.dto';
 import { assertValidTransition } from './state-machine/booking.state-machine';
 import { QUEUES } from '../../common/constants';
 import { Role } from '../../common/enums/roles.enum';
+import { BookingType } from '../../common/enums/booking-type.enum';
+import { CollaboratorStatus } from '../../common/enums/collaborator-status.enum';
+import { CustomRequestStatus } from '../../common/enums/custom-request-status.enum';
 import { User } from '../users/entities/user.entity';
 import { BookingStatus } from '../../common/enums/booking-status.enum';
+import { PromotionsService } from '../promotions/promotions.service';
+import { OfferTarget, DiscountType } from '../promotions/entities/offer.entity';
 
 @Injectable()
 export class BookingsService {
@@ -24,45 +35,281 @@ export class BookingsService {
   constructor(
     private readonly bookingsRepository: BookingsRepository,
     @InjectQueue(QUEUES.NOTIFICATIONS) private readonly notifyQueue: Queue,
+    private readonly promotionsService: PromotionsService,
   ) {}
 
   async create(customer: User, dto: CreateBookingDto) {
-    // 1. Get vendor and service details
-    const bookingDetails = await this.bookingsRepository.getBookingContext(dto.vendorId, dto.serviceId);
-    const { vendor, service } = bookingDetails;
-
+    const { vendor, service } = await this.bookingsRepository.getBookingContext(dto.vendorId, dto.serviceId);
     if (!vendor) throw new NotFoundException('Vendor not found');
     if (!service) throw new NotFoundException('Service not found');
 
-    // 2. Calculate Block-out period (Duration + 6hr Buffer)
-    const startAt = new Date(dto.eventDate);
-    const duration = Number(service.duration || 1); // Default to 1hr if not set
-    const endAt = new Date(startAt.getTime() + (duration + 6) * 60 * 60 * 1000);
-
-    // 3. Find an available team
-    const teamIndex = await this.findAvailableTeam(dto.vendorId, startAt, endAt, vendor.teamCount);
-    if (teamIndex === -1) {
-      throw new ForbiddenException('All teams are fully booked for this time slot (including mandatory 6hr rest period)');
+    if (service.bookingType !== dto.bookingType) {
+      throw new BadRequestException(
+        `This package only supports ${service.bookingType} bookings`,
+      );
     }
 
-    const booking = await this.bookingsRepository.create({
-      ...dto,
-      customerId: customer.id,
-      eventDate: startAt,
-      endAt: endAt,
-      teamIndex: teamIndex,
-    });
+    let eventDate: Date;
+    let endAt: Date;
+    let endDate: Date | undefined;
+    let durationHours: number | undefined;
+    let eventDates: { date: string; label: string }[] | undefined;
 
-    // Invalidate vendor list cache if any
-    // Note: Bookings aren't heavily cached yet but we should be safe
-    
-    this.notifyQueue.add('booking-created', {
-      bookingId: booking.id,
-      customerId: customer.id,
-      vendorId: dto.vendorId,
-    }).catch((err) => this.logger.warn(`notify queue error: ${err?.message}`));
+    switch (dto.bookingType) {
+      case BookingType.FIXED: {
+        if (!dto.startTime) throw new BadRequestException('FIXED booking requires startTime');
+        eventDate = new Date(dto.startTime);
+        endAt = new Date(eventDate.getTime() + 12 * 3600 * 1000);
+        const teamIndex = await this.findAvailableTeam(dto.vendorId, eventDate, endAt, vendor.teamCount);
+        if (teamIndex === -1) {
+          throw new ConflictException('No team available for the selected time');
+        }
 
-    return { message: 'Booking created', data: booking };
+        const totalAmount = Number(service.price);
+
+        const booking = await this.bookingsRepository.create({
+          customerId: customer.id,
+          vendorId: dto.vendorId,
+          serviceId: dto.serviceId,
+          bookingType: dto.bookingType,
+          eventDate,
+          endAt,
+          eventLocation: dto.eventLocation,
+          notes: dto.notes,
+          totalAmount,
+          teamIndex,
+        });
+        const addonTotal = await this.processAddonsAndRequests(booking.id, dto.vendorId, dto.addons, dto.customRequests);
+        const finalTotal = totalAmount + addonTotal;
+        const promoResult = dto.promoCode ? await this.applyPromo(dto.promoCode, finalTotal, customer.role) : null;
+        await this.bookingsRepository.update(booking.id, {
+          totalAmount: finalTotal - (promoResult?.discountAmount ?? 0),
+          ...(promoResult ? { promoCode: dto.promoCode.toUpperCase(), discountAmount: promoResult.discountAmount } : {}),
+        });
+        this.enqueueCreated(booking.id, customer.id, dto.vendorId);
+        return { message: 'Booking created', data: await this.bookingsRepository.findById(booking.id) };
+      }
+
+      case BookingType.HOURLY: {
+        if (!dto.startTime || !dto.durationHours) {
+          throw new BadRequestException('HOURLY booking requires startTime and durationHours');
+        }
+        const min = Number(service.minHours ?? 0.5);
+        const max = Number(service.maxHours ?? 24);
+        if (dto.durationHours < min || dto.durationHours > max) {
+          throw new BadRequestException(
+            `Duration must be between ${min}–${max} hours for this package`,
+          );
+        }
+        eventDate = new Date(dto.startTime);
+        durationHours = dto.durationHours;
+        // endAt = shoot end + 6hr mandatory rest buffer
+        endAt = new Date(eventDate.getTime() + (dto.durationHours + 6) * 3600 * 1000);
+
+        const teamIndex = await this.findAvailableTeam(dto.vendorId, eventDate, endAt, vendor.teamCount);
+        if (teamIndex === -1) {
+          throw new ConflictException('All teams are fully booked for this time slot (including mandatory 6hr rest period)');
+        }
+
+        const totalAmount = Number(service.price) * durationHours;
+
+        const booking = await this.bookingsRepository.create({
+          customerId: customer.id,
+          vendorId: dto.vendorId,
+          serviceId: dto.serviceId,
+          bookingType: dto.bookingType,
+          eventDate,
+          endAt,
+          durationHours,
+          eventLocation: dto.eventLocation,
+          notes: dto.notes,
+          totalAmount,
+          teamIndex,
+        });
+        const addonTotal = await this.processAddonsAndRequests(booking.id, dto.vendorId, dto.addons, dto.customRequests);
+        const finalTotal = totalAmount + addonTotal;
+        const promoResult = dto.promoCode ? await this.applyPromo(dto.promoCode, finalTotal, customer.role) : null;
+        await this.bookingsRepository.update(booking.id, {
+          totalAmount: finalTotal - (promoResult?.discountAmount ?? 0),
+          ...(promoResult ? { promoCode: dto.promoCode.toUpperCase(), discountAmount: promoResult.discountAmount } : {}),
+        });
+        this.enqueueCreated(booking.id, customer.id, dto.vendorId);
+        return { message: 'Booking created', data: await this.bookingsRepository.findById(booking.id) };
+      }
+
+      case BookingType.MULTI_DATE: {
+        if (!dto.eventDates?.length) {
+          throw new BadRequestException('MULTI_DATE booking requires at least one date');
+        }
+        const maxDates = service.maxDates ?? 1;
+        if (dto.eventDates.length > maxDates) {
+          throw new BadRequestException(
+            `This package allows max ${maxDates} date(s). You selected ${dto.eventDates.length}.`,
+          );
+        }
+        const sorted = [...dto.eventDates].sort((a, b) => a.date.localeCompare(b.date));
+        const datesToCheck = sorted.map((d) => d.date);
+        const teamIndex = await this.findAvailableTeamForMultiDate(dto.vendorId, datesToCheck, vendor.teamCount);
+        if (teamIndex === -1) {
+          throw new ConflictException('No team is available for all selected dates');
+        }
+
+        const totalAmount = Number(service.price) * datesToCheck.length;
+
+        const booking = await this.bookingsRepository.create({
+          customerId: customer.id,
+          vendorId: dto.vendorId,
+          serviceId: dto.serviceId,
+          bookingType: dto.bookingType,
+          eventDate: new Date(sorted[0].date),
+          endAt: new Date(new Date(sorted[sorted.length - 1].date).getTime() + 30 * 3600 * 1000),
+          eventDates: sorted,
+          eventLocation: dto.eventLocation,
+          notes: dto.notes,
+          totalAmount,
+          teamIndex,
+        });
+        const addonTotal = await this.processAddonsAndRequests(booking.id, dto.vendorId, dto.addons, dto.customRequests);
+        const finalTotal = totalAmount + addonTotal;
+        const promoResult = dto.promoCode ? await this.applyPromo(dto.promoCode, finalTotal, customer.role) : null;
+        await this.bookingsRepository.update(booking.id, {
+          totalAmount: finalTotal - (promoResult?.discountAmount ?? 0),
+          ...(promoResult ? { promoCode: dto.promoCode.toUpperCase(), discountAmount: promoResult.discountAmount } : {}),
+        });
+        this.enqueueCreated(booking.id, customer.id, dto.vendorId);
+        return { message: 'Booking created', data: await this.bookingsRepository.findById(booking.id) };
+      }
+
+      case BookingType.DATE_RANGE: {
+        if (!dto.startDate || !dto.endDate) {
+          throw new BadRequestException('DATE_RANGE booking requires startDate and endDate');
+        }
+        const start = new Date(dto.startDate);
+        const end = new Date(dto.endDate);
+        if (end < start) {
+          throw new BadRequestException('endDate must be on or after startDate');
+        }
+        const dayCount = Math.floor((end.getTime() - start.getTime()) / 86_400_000) + 1;
+        const maxDays = service.maxDays ?? 1;
+        if (dayCount > maxDays) {
+          throw new BadRequestException(
+            `This package allows max ${maxDays} day(s). Your range spans ${dayCount} day(s).`,
+          );
+        }
+
+        eventDate = start;
+        endDate = end;
+        endAt = new Date(end.getTime() + 24 * 3600 * 1000);
+        const teamIndex = await this.findAvailableTeam(dto.vendorId, eventDate, endAt, vendor.teamCount);
+        if (teamIndex === -1) {
+          throw new ConflictException('No team available for the selected date range');
+        }
+
+        const totalAmount = Number(service.price) * dayCount;
+
+        const booking = await this.bookingsRepository.create({
+          customerId: customer.id,
+          vendorId: dto.vendorId,
+          serviceId: dto.serviceId,
+          bookingType: dto.bookingType,
+          eventDate,
+          endAt,
+          endDate,
+          eventLocation: dto.eventLocation,
+          notes: dto.notes,
+          totalAmount,
+          teamIndex,
+        });
+        const addonTotal = await this.processAddonsAndRequests(booking.id, dto.vendorId, dto.addons, dto.customRequests);
+        const finalTotal = totalAmount + addonTotal;
+        const promoResult = dto.promoCode ? await this.applyPromo(dto.promoCode, finalTotal, customer.role) : null;
+        await this.bookingsRepository.update(booking.id, {
+          totalAmount: finalTotal - (promoResult?.discountAmount ?? 0),
+          ...(promoResult ? { promoCode: dto.promoCode.toUpperCase(), discountAmount: promoResult.discountAmount } : {}),
+        });
+        this.enqueueCreated(booking.id, customer.id, dto.vendorId);
+        return { message: 'Booking created', data: await this.bookingsRepository.findById(booking.id) };
+      }
+    }
+  }
+
+  private async applyPromo(
+    code: string,
+    totalAmount: number,
+    userRole: string,
+  ): Promise<{ discountAmount: number }> {
+    const offer = await this.promotionsService.validateCode(code);
+
+    // Enforce target audience
+    if (offer.target !== OfferTarget.ALL) {
+      const expectedRole = offer.target === OfferTarget.CUSTOMER ? Role.CUSTOMER : Role.VENDOR;
+      if (userRole !== expectedRole) {
+        throw new BadRequestException(
+          `This promo code is only valid for ${offer.target.toLowerCase()}s`,
+        );
+      }
+    }
+
+    // Calculate discount
+    let discountAmount: number;
+    if (offer.discountType === DiscountType.PERCENTAGE) {
+      discountAmount = Math.round((totalAmount * Number(offer.discountValue)) / 100);
+    } else {
+      discountAmount = Number(offer.discountValue);
+    }
+    // Never discount below zero
+    discountAmount = Math.min(discountAmount, totalAmount);
+
+    // Atomically increment usage count
+    await this.promotionsService.incrementUsage(offer.id);
+
+    return { discountAmount };
+  }
+
+  private async processAddonsAndRequests(
+    bookingId: string,
+    vendorId: string,
+    addonItems: CreateBookingDto['addons'],
+    customRequestDescs: string[] | undefined,
+  ): Promise<number> {
+    let addonTotal = 0;
+
+    if (addonItems?.length) {
+      const addonIds = addonItems.map((a) => a.addonId);
+      const addonEntities = await this.bookingsRepository.findServiceAddonsByIds(addonIds);
+
+      for (const item of addonItems) {
+        const entity = addonEntities.find((e) => e.id === item.addonId);
+        if (!entity) throw new NotFoundException(`Add-on ${item.addonId} not found`);
+        if (entity.vendorId !== vendorId) throw new BadRequestException(`Add-on ${item.addonId} does not belong to this vendor`);
+        if (!entity.isActive) throw new BadRequestException(`Add-on "${entity.name}" is no longer available`);
+        if (item.quantity > entity.maxQuantity) {
+          throw new BadRequestException(`Max quantity for "${entity.name}" is ${entity.maxQuantity}`);
+        }
+        addonTotal += Number(entity.price) * item.quantity;
+      }
+
+      await this.bookingsRepository.saveBookingAddons(
+        addonItems.map((item) => {
+          const entity = addonEntities.find((e) => e.id === item.addonId)!;
+          return { bookingId, addonId: item.addonId, quantity: item.quantity, priceSnapshot: entity.price };
+        }),
+      );
+    }
+
+    if (customRequestDescs?.length) {
+      await this.bookingsRepository.saveCustomRequests(
+        customRequestDescs.map((description) => ({ bookingId, description })),
+      );
+    }
+
+    return addonTotal;
+  }
+
+  private enqueueCreated(bookingId: string, customerId: string, vendorId: string) {
+    this.notifyQueue
+      .add('booking-created', { bookingId, customerId, vendorId })
+      .catch((err) => this.logger.warn(`notify queue error: ${err?.message}`));
   }
 
   async findOne(id: string, user: User) {
@@ -185,15 +432,150 @@ export class BookingsService {
   }
 
   private async findAvailableTeam(vendorId: string, start: Date, end: Date, teamCount: number): Promise<number> {
-    // Get all overlapping bookings for this vendor
     const existing = await this.bookingsRepository.findOverlapping(vendorId, start, end);
-
-    // Check each team (0 to teamCount-1)
     for (let i = 0; i < teamCount; i++) {
       const isTeamBusy = existing.some(b => b.teamIndex === i && b.status !== BookingStatus.CANCELLED);
       if (!isTeamBusy) return i;
     }
+    return -1;
+  }
 
-    return -1; // All teams are busy
+  private async findAvailableTeamForMultiDate(vendorId: string, dates: string[], teamCount: number): Promise<number> {
+    // 1. Get all overlapping bookings for the entire span (first date to last date)
+    const sorted = [...dates].sort();
+    const start = new Date(sorted[0]);
+    const end = new Date(new Date(sorted[sorted.length - 1]).getTime() + 30 * 3600 * 1000);
+    const existing = await this.bookingsRepository.findOverlapping(vendorId, start, end);
+
+    // 2. For each team, check if it has conflicts on ANY of the specific dates
+    for (let i = 0; i < teamCount; i++) {
+      const teamBookings = existing.filter(b => b.teamIndex === i);
+      const hasConflict = dates.some(dateStr => {
+        const d = new Date(dateStr);
+        const dEnd = new Date(d.getTime() + 30 * 3600 * 1000); // 24h + 6h rest
+        return teamBookings.some(b => b.eventDate < dEnd && (b.endAt || b.eventDate) > d);
+      });
+
+      if (!hasConflict) return i;
+    }
+    return -1;
+  }
+
+  // ── Add-ons & Custom Requests ──────────────────────────────────────────────
+
+  getBookingAddons(bookingId: string) {
+    return this.bookingsRepository.findAddonsByBooking(bookingId);
+  }
+
+  getBookingCustomRequests(bookingId: string) {
+    return this.bookingsRepository.findCustomRequestsByBooking(bookingId);
+  }
+
+  async quoteCustomRequest(requestId: string, user: User, dto: QuoteCustomRequestDto) {
+    const request = await this.bookingsRepository.findCustomRequestById(requestId);
+    if (!request) throw new NotFoundException('Custom request not found');
+
+    const booking = await this.bookingsRepository.findById(request.bookingId);
+    if (booking.vendor?.userId !== user.id && user.role !== Role.ADMIN) {
+      throw new ForbiddenException('Only the assigned vendor can quote this request');
+    }
+    if (request.status !== CustomRequestStatus.PENDING) {
+      throw new BadRequestException('Only PENDING requests can be quoted');
+    }
+
+    return this.bookingsRepository.updateCustomRequest(requestId, {
+      quotedPrice: dto.quotedPrice,
+      vendorResponse: dto.vendorResponse,
+      status: CustomRequestStatus.QUOTED,
+    });
+  }
+
+  async respondToCustomRequest(requestId: string, user: User, dto: RespondCustomRequestDto) {
+    const request = await this.bookingsRepository.findCustomRequestById(requestId);
+    if (!request) throw new NotFoundException('Custom request not found');
+
+    const booking = await this.bookingsRepository.findById(request.bookingId);
+    if (booking.customerId !== user.id) {
+      throw new ForbiddenException('Only the customer can accept or reject a quote');
+    }
+    if (request.status !== CustomRequestStatus.QUOTED) {
+      throw new BadRequestException('Only QUOTED requests can be accepted or rejected');
+    }
+
+    const updated = await this.bookingsRepository.updateCustomRequest(requestId, { status: dto.status });
+
+    if (dto.status === CustomRequestStatus.ACCEPTED && request.quotedPrice) {
+      const currentTotal = Number(booking.totalAmount);
+      await this.bookingsRepository.update(booking.id, {
+        totalAmount: currentTotal + Number(request.quotedPrice),
+      });
+    }
+
+    return updated;
+  }
+
+  // ── Collaborators ──────────────────────────────────────────────────────────
+
+  getBookingCollaborators(bookingId: string) {
+    return this.bookingsRepository.findCollaboratorsByBooking(bookingId);
+  }
+
+  getMyCollaboratorInvites(collaboratorVendorId: string) {
+    return this.bookingsRepository.findCollaboratorInvites(collaboratorVendorId);
+  }
+
+  async inviteCollaborator(bookingId: string, user: User, dto: InviteCollaboratorDto) {
+    const booking = await this.bookingsRepository.findById(bookingId);
+    if (!booking) throw new NotFoundException('Booking not found');
+    if (booking.vendor?.userId !== user.id) {
+      throw new ForbiddenException('Only the primary vendor can invite collaborators');
+    }
+    if (dto.collaboratorVendorId === booking.vendorId) {
+      throw new BadRequestException('Cannot invite yourself as a collaborator');
+    }
+
+    return this.bookingsRepository.saveCollaborator({
+      bookingId,
+      primaryVendorId: booking.vendorId,
+      collaboratorVendorId: dto.collaboratorVendorId,
+      role: dto.role,
+      agreedFee: dto.agreedFee,
+      notes: dto.notes,
+      status: CollaboratorStatus.INVITED,
+    });
+  }
+
+  async respondToCollaboratorInvite(collaboratorId: string, user: User, dto: RespondCollaboratorDto) {
+    const collab = await this.bookingsRepository.findCollaboratorById(collaboratorId);
+    if (!collab) throw new NotFoundException('Collaborator invite not found');
+    if (collab.collaboratorVendor?.user?.id !== user.id) {
+      throw new ForbiddenException('Only the invited vendor can respond to this invite');
+    }
+    if (collab.status !== CollaboratorStatus.INVITED) {
+      throw new BadRequestException('This invite has already been responded to');
+    }
+
+    return this.bookingsRepository.updateCollaborator(collaboratorId, {
+      status: dto.status,
+      respondedAt: new Date(),
+    });
+  }
+
+  async cancelCollaborator(collaboratorId: string, user: User) {
+    const collab = await this.bookingsRepository.findCollaboratorById(collaboratorId);
+    if (!collab) throw new NotFoundException('Collaborator not found');
+
+    const booking = await this.bookingsRepository.findById(collab.bookingId);
+    if (booking.vendor?.userId !== user.id) {
+      throw new ForbiddenException('Only the primary vendor can cancel a collaborator');
+    }
+    if (collab.status === CollaboratorStatus.CANCELLED) {
+      throw new BadRequestException('Already cancelled');
+    }
+
+    return this.bookingsRepository.updateCollaborator(collaboratorId, {
+      status: CollaboratorStatus.CANCELLED,
+      respondedAt: new Date(),
+    });
   }
 }

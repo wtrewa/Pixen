@@ -22,6 +22,12 @@ export class VendorAvailability {
   @Column({ type: 'varchar', length: 255, nullable: true })
   reason: string;
 
+  @Column({ type: 'varchar', length: 50, default: 'MANUAL' })
+  source: string; // MANUAL, GOOGLE_CALENDAR
+
+  @Column({ name: 'external_event_id', type: 'varchar', length: 255, nullable: true })
+  externalEventId: string;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

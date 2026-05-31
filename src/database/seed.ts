@@ -29,9 +29,18 @@ const VENDORS = [
     rating: 4.9,
     totalReviews: 218,
     services: [
-      { name: 'Silver Package', description: '1-day coverage, 300 edited photos, 10-min highlight film', price: 80000, duration: 10 },
-      { name: 'Gold Package', description: '2-day coverage, 600 edited photos, 20-min cinematic film, drone shots', price: 120000, duration: 18 },
-      { name: 'Platinum Package', description: '3-day full coverage, 1000+ photos, 40-min film, pre-wedding shoot included', price: 200000, duration: 30 },
+      { name: 'Studio Session', description: 'Quick professional portraits in our Mumbai studio.', price: 5000, duration: 1, bookingType: 'HOURLY', minHours: 2, maxHours: 8, tier: 'SILVER', features: ['1 Photographer', '50 Photos', '2 Hours'] },
+      { name: 'Traditional Wedding', description: 'Comprehensive coverage for multi-day traditional rituals.', price: 45000, duration: 12, bookingType: 'MULTI_DATE', maxDates: 3, tier: 'GOLD', features: ['2 Photographers', '300 Photos', 'Highlight Film'] },
+      { name: 'Destination Signature', description: 'Elite coverage for extended destination weddings (all days included).', price: 40000, duration: 12, bookingType: 'DATE_RANGE', maxDays: 5, tier: 'PLATINUM', features: ['Team of 3', 'Cinematic Film', 'Luxury Albums'] },
+    ],
+    equipment: [
+      { name: 'Sony A7S III', brand: 'Sony', model: 'A7S III', category: 'CAMERA_BODY', quantity: 2, notes: '4K 120fps capable' },
+      { name: 'Sony 24-70mm GM II', brand: 'Sony', model: '24-70mm GM II', category: 'LENS', quantity: 1 },
+      { name: 'DJI Mavic 3 Pro', brand: 'DJI', model: 'Mavic 3 Pro', category: 'DRONE', quantity: 1 },
+    ],
+    addons: [
+      { name: 'Cinematic Drone Shots', description: 'Extra 4K drone coverage', price: 5000, category: 'DRONE', maxQuantity: 1 },
+      { name: 'Extra Photographer', description: 'One additional candid photographer', price: 15000, category: 'CAMERA', maxQuantity: 2 },
     ],
   },
   {
@@ -45,9 +54,9 @@ const VENDORS = [
     rating: 4.8,
     totalReviews: 174,
     services: [
-      { name: 'Pre-Wedding Shoot', description: 'Half-day outdoor shoot, 100 edited images, 2 locations', price: 35000, duration: 5 },
-      { name: 'Wedding Day', description: 'Full-day wedding coverage, 400 edited photos, same-week delivery', price: 95000, duration: 12 },
-      { name: 'Complete Wedding', description: 'Mehendi + Sangeet + Wedding, 700+ photos, Instagram reels included', price: 150000, duration: 24 },
+      { name: 'Editorial Portrait', description: 'Fine-art editorial portraits for fashion or personal branding.', price: 12000, duration: 1, bookingType: 'HOURLY', minHours: 3, maxHours: 10 },
+      { name: 'Elite Wedding', description: 'Two-day full coverage with a documentary fine-art aesthetic.', price: 60000, duration: 12, bookingType: 'MULTI_DATE', maxDates: 2 },
+      { name: 'The Wedding Week', description: 'Full week coverage for grand destination weddings.', price: 50000, duration: 12, bookingType: 'DATE_RANGE', maxDays: 7 },
     ],
   },
   {
@@ -77,9 +86,9 @@ const VENDORS = [
     rating: 4.8,
     totalReviews: 98,
     services: [
-      { name: 'Traditional Package', description: 'Coverage of all traditional rituals, 350 edited photos', price: 65000, duration: 12 },
-      { name: 'Full Coverage', description: '2-day coverage with videography, 600 images, 20-min highlight', price: 110000, duration: 20 },
-      { name: 'Destination Wedding', description: 'Outstation travel included, 3-day coverage, full film', price: 180000, duration: 30 },
+      { name: 'Tradition Essentials', description: 'Expert coverage of traditional South Indian rituals.', price: 6000, duration: 1, bookingType: 'HOURLY', minHours: 4, maxHours: 12 },
+      { name: 'Temple Wedding Special', description: 'Coverage for multi-day temple ceremonies and rituals.', price: 35000, duration: 10, bookingType: 'MULTI_DATE', maxDates: 3 },
+      { name: 'South India Journey', description: 'Extended range coverage for destination weddings across South India.', price: 30000, duration: 10, bookingType: 'DATE_RANGE', maxDays: 4 },
     ],
   },
   {
@@ -227,6 +236,8 @@ async function seed() {
   const mediaRepo = AppDataSource.getRepository('portfolio_media');
   const bookingRepo = AppDataSource.getRepository('bookings');
   const postRepo = AppDataSource.getRepository(Post);
+  const equipmentRepo = AppDataSource.getRepository('vendor_equipment');
+  const addonRepo = AppDataSource.getRepository('service_addons');
 
   const passwordHash = await bcrypt.hash('Test@1234', 10);
   const adminPasswordHash = await bcrypt.hash(adminPassword, 10);
@@ -267,10 +278,12 @@ async function seed() {
   for (const data of VENDORS) {
     const existing = await userRepo.findOne({ where: { email: data.email }, relations: ['vendor'] });
     let savedVendor;
+    let vendorUserId;
 
     if (existing) {
       console.log(`ℹ️  User ${data.email} already exists, using existing profile...`);
       savedVendor = existing.vendor;
+      vendorUserId = existing.id;
     } else {
       // Create vendor user
       const user = userRepo.create({
@@ -283,6 +296,7 @@ async function seed() {
         provider: 'local',
       });
       const savedUser = await userRepo.save(user);
+      vendorUserId = savedUser.id;
 
       // Create vendor profile
       const vendor = vendorRepo.create({
@@ -315,9 +329,38 @@ async function seed() {
         description: svc.description,
         price: svc.price,
         duration: svc.duration,
+        bookingType: (svc as any).bookingType || 'FIXED',
+        minHours: (svc as any).minHours,
+        maxHours: (svc as any).maxHours,
+        maxDates: (svc as any).maxDates,
+        maxDays: (svc as any).maxDays,
+        tier: (svc as any).tier || 'CUSTOM',
+        features: (svc as any).features || [],
         isActive: true,
       }));
       services.push(service);
+    }
+
+    // Create equipment
+    if ((data as any).equipment) {
+      for (const eq of (data as any).equipment) {
+        await equipmentRepo.save(equipmentRepo.create({
+          vendorId: savedVendor.id,
+          ...eq,
+          isAvailable: true,
+        }));
+      }
+    }
+
+    // Create addons
+    if ((data as any).addons) {
+      for (const ad of (data as any).addons) {
+        await addonRepo.save(addonRepo.create({
+          vendorId: savedVendor.id,
+          ...ad,
+          isActive: true,
+        }));
+      }
     }
 
     // 2. Create Sample Portfolios
@@ -468,6 +511,7 @@ async function seed() {
       const videoUrl = (p as any).url || `https://videos.pexels.com/video-files/${(p as any).id}/${(p as any).id}-sd_640_360_25fps.mp4`; 
 
       await postRepo.save(postRepo.create({
+        userId: vendorUserId,
         vendorId: savedVendor.id,
         type: PostType.VIDEO,
         url: videoUrl,

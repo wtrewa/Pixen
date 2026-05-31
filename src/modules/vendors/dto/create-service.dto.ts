@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { BookingType } from '../../../common/enums/booking-type.enum';
 
 export class CreateServiceDto {
   @ApiProperty()
@@ -21,4 +22,29 @@ export class CreateServiceDto {
   @IsOptional()
   @IsNumber()
   duration?: number;
+
+  @ApiProperty({ enum: BookingType, default: BookingType.HOURLY })
+  @IsOptional()
+  @IsEnum(BookingType)
+  bookingType?: BookingType;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  minHours?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  maxHours?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  maxDates?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  maxDays?: number;
 }

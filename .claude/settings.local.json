@@ -49,7 +49,14 @@
       "Bash(cat railway.json)",
       "Bash(cat railway.toml)",
       "Bash(xargs grep *)",
-      "PowerShell($env:PGPASSWORD = \"postgres\"; & \"C:\\\\Program Files\\\\PostgreSQL\\\\16\\\\bin\\\\psql.exe\" -h localhost -U postgres -d pixen_db -c \"ALTER TABLE bookings ADD COLUMN IF NOT EXISTS end_at TIMESTAMPTZ NULL, ADD COLUMN IF NOT EXISTS team_index INT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS is_final_paid BOOLEAN NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS shoot_completed_at TIMESTAMPTZ NULL, ADD COLUMN IF NOT EXISTS delivery_link VARCHAR NULL, ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ NULL;\")"
+      "PowerShell($env:PGPASSWORD = \"postgres\"; & \"C:\\\\Program Files\\\\PostgreSQL\\\\16\\\\bin\\\\psql.exe\" -h localhost -U postgres -d pixen_db -c \"ALTER TABLE bookings ADD COLUMN IF NOT EXISTS end_at TIMESTAMPTZ NULL, ADD COLUMN IF NOT EXISTS team_index INT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS is_final_paid BOOLEAN NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS shoot_completed_at TIMESTAMPTZ NULL, ADD COLUMN IF NOT EXISTS delivery_link VARCHAR NULL, ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ NULL;\")",
+      "Bash(Get-ChildItem -Path \"f:\\\\Pixen\" -Force)",
+      "Bash(Select-Object Mode, Name)",
+      "Bash(Format-Table -AutoSize)",
+      "Bash(Get-Date -Format \"yyyyMMddHHmmss\")",
+      "Bash(Get-ChildItem -Recurse \"f:\\\\Pixen\\\\src\\\\modules\\\\vendors\" -File)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "PowerShell(Get-ChildItem -Path \"F:\\\\pixen-web\" -Force | Format-Table -Property Name, @{Name=\"Type\"; Expression={if\\($_.PSIsContainer\\) {\"Dir\"} else {\"File\"}}} -AutoSize)"
     ]
   }
 }

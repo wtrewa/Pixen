@@ -18,6 +18,7 @@ export class StorageService {
     this.bucket = config.get<string>('storage.bucket');
     this.s3 = new S3Client({
       region: config.get<string>('storage.region'),
+      endpoint: config.get<string>('storage.endpoint'),
       credentials: {
         accessKeyId: config.get<string>('storage.accessKeyId'),
         secretAccessKey: config.get<string>('storage.secretAccessKey'),
@@ -35,6 +36,10 @@ export class StorageService {
         ContentType: file.mimetype,
       }),
     );
+    const publicUrl = this.config.get<string>('storage.publicUrl');
+    if (publicUrl) {
+      return `${publicUrl.replace(/\/$/, '')}/${key}`;
+    }
     return `https://${this.bucket}.s3.amazonaws.com/${key}`;
   }
 
@@ -42,8 +47,20 @@ export class StorageService {
     await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
 
-  async getPresignedUrl(key: string, expiresIn = 3600): Promise<string> {
-    const command = new PutObjectCommand({ Bucket: this.bucket, Key: key });
+  async getPresignedUrl(key: string, contentType?: string, expiresIn = 3600): Promise<string> {
+    const command = new PutObjectCommand({ 
+      Bucket: this.bucket, 
+      Key: key,
+      ContentType: contentType,
+    });
     return getSignedUrl(this.s3, command, { expiresIn });
+  }
+
+  getPublicUrl(key: string): string {
+    const publicUrl = this.config.get<string>('storage.publicUrl');
+    if (publicUrl) {
+      return `${publicUrl.replace(/\/$/, '')}/${key}`;
+    }
+    return `https://${this.bucket}.s3.amazonaws.com/${key}`;
   }
 }

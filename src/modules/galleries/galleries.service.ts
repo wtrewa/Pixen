@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException, ForbiddenException, Logger } from '@nestjs/common';
+import { v4 as uuid } from 'uuid';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -19,6 +20,8 @@ export class GalleriesService {
     private readonly config: ConfigService,
   ) {}
 
+  private readonly logger = new Logger(GalleriesService.name);
+
   async create(vendorId: string, dto: CreateGalleryDto) {
     const passwordHash = dto.password ? await bcrypt.hash(dto.password, 10) : null;
     
@@ -28,13 +31,26 @@ export class GalleriesService {
       passwordHash,
     });
 
-    await this.galleryRepo.save(gallery);
+    try {
+      await this.galleryRepo.save(gallery);
+    } catch (err) {
+      this.logger.error(`Failed to save gallery: ${err.message}`, { vendorId, dto });
+      throw err;
+    }
     
     // Generate a temporary QR code URL placeholder or actual QR code logic here
     gallery.qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://pixen.gallery/gallery/${gallery.id}`;
     await this.galleryRepo.save(gallery);
 
     return gallery;
+  }
+
+  async findByVendor(vendorId: string) {
+    return this.galleryRepo.find({
+      where: { vendorId },
+      order: { createdAt: 'DESC' },
+      relations: ['booking'],
+    });
   }
 
   async findOne(id: string) {
@@ -47,16 +63,21 @@ export class GalleriesService {
   }
 
   async validateAccess(id: string, password?: string) {
-    const gallery = await this.galleryRepo.findOne({
-      where: { id },
-      select: ['id', 'passwordHash'],
-    });
+    const gallery = await this.galleryRepo.createQueryBuilder('gallery')
+      .addSelect('gallery.passwordHash')
+      .where('gallery.id = :id', { id })
+      .getOne();
+      
     if (!gallery) throw new NotFoundException('Gallery not found');
 
     if (gallery.passwordHash) {
       if (!password) throw new UnauthorizedException('Password required');
+      this.logger.debug(`Validating password for gallery ${id}`);
       const valid = await bcrypt.compare(password, gallery.passwordHash);
-      if (!valid) throw new UnauthorizedException('Invalid password');
+      if (!valid) {
+        this.logger.warn(`Invalid password attempt for gallery ${id}`);
+        throw new UnauthorizedException('Invalid password');
+      }
     }
 
     // Issue a temporary access token for this specific gallery
@@ -71,21 +92,22 @@ export class GalleriesService {
     return { accessToken: token };
   }
 
-  async getUploadUrls(vendorId: string, id: string, fileCount: number) {
+  async getUploadUrls(vendorId: string, id: string, files: { name: string; type: string }[]) {
     const gallery = await this.galleryRepo.findOne({ where: { id, vendorId } });
     if (!gallery) throw new ForbiddenException('Access denied');
 
     const urls = [];
-    for (let i = 0; i < fileCount; i++) {
-      const key = `galleries/${id}/${Date.now()}-${i}.jpg`;
-      const uploadUrl = await this.storageService.getPresignedUrl(key);
-      urls.push({ uploadUrl, key });
+    for (const file of files) {
+      const ext = file.name.split('.').pop() || 'jpg';
+      const key = `galleries/${id}/${uuid()}.${ext}`;
+      const uploadUrl = await this.storageService.getPresignedUrl(key, file.type);
+      urls.push({ uploadUrl, key, fileName: file.name });
     }
 
     return urls;
   }
 
-  async confirmUploads(vendorId: string, id: string, media: { key: string; type: MediaType }[]) {
+  async confirmUploads(vendorId: string, id: string, media: { key: string; type: MediaType; name: string }[]) {
     const gallery = await this.galleryRepo.findOne({ where: { id, vendorId } });
     if (!gallery) throw new ForbiddenException('Access denied');
 
@@ -93,9 +115,8 @@ export class GalleriesService {
       this.mediaRepo.create({
         galleryId: id,
         type: m.type,
-        originalUrl: `https://${this.config.get('storage.bucket')}.s3.amazonaws.com/${m.key}`,
-        // In a real app, we would trigger a Lambda to generate thumbnails
-        thumbnailUrl: `https://${this.config.get('storage.bucket')}.s3.amazonaws.com/${m.key}`, 
+        originalUrl: this.storageService.getPublicUrl(m.key),
+        thumbnailUrl: this.storageService.getPublicUrl(m.key), 
       }),
     );
 

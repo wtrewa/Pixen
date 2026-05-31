@@ -1,5 +1,9 @@
-import { Controller, Get, Post, Delete, Patch, Body, Param, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  Controller, Get, Post, Delete, Patch, Body, Param, Query,
+  UseInterceptors, UploadedFile,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { PostsService } from './posts.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -37,10 +41,22 @@ export class PostsController {
   }
 
   @Post()
-  @Roles(Role.VENDOR)
-  @ApiOperation({ summary: 'Vendor upload new reel/post' })
+  @ApiOperation({ summary: 'Create new reel/post' })
   createPost(@CurrentUser() user: User, @Body() dto: CreatePostDto) {
     return this.postsService.createPost(user.id, dto);
+  }
+
+  @Post('upload')
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Upload new reel or image post' })
+  @UseInterceptors(FileInterceptor('file'))
+  uploadPost(
+    @CurrentUser() user: User,
+    @UploadedFile() file: Express.Multer.File,
+    @Body('caption') caption?: string,
+    @Body('category') category?: string,
+  ) {
+    return this.postsService.uploadPost(user.id, file, caption, category);
   }
 
   @Patch(':id/like')
@@ -52,7 +68,6 @@ export class PostsController {
   }
 
   @Delete(':id')
-  @Roles(Role.VENDOR)
   @ApiOperation({ summary: 'Delete own post' })
   @ApiParam({ name: 'id', description: 'Post UUID' })
   deletePost(@Param('id') id: string, @CurrentUser() user: User) {

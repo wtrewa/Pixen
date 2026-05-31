@@ -9,6 +9,8 @@ import { Vendor } from './entities/vendor.entity';
 import { CreateVendorDto } from './dto/create-vendor.dto';
 import { UpdateVendorDto } from './dto/update-vendor.dto';
 import { CreateServiceDto } from './dto/create-service.dto';
+import { CreateEquipmentDto } from './dto/create-equipment.dto';
+import { CreateAddonDto } from './dto/create-addon.dto';
 import { QueryVendorDto } from './dto/query-vendor.dto';
 import { RedisService } from '../../infrastructure/redis/redis.service';
 import { CACHE_KEYS } from '../../common/constants';
@@ -145,5 +147,63 @@ export class VendorsService {
     if (vendor.userId !== userId) throw new ForbiddenException();
 
     await this.vendorsRepository.deleteAvailability(availabilityId);
+  }
+
+  // ── Equipment Catalog ──────────────────────────────────────────────────────
+
+  async getEquipment(vendorId: string) {
+    const equipment = await this.vendorsRepository.findEquipmentByVendor(vendorId);
+    return { data: equipment };
+  }
+
+  async addEquipment(vendorId: string, userId: string, dto: CreateEquipmentDto) {
+    const vendor = await this.findOne(vendorId);
+    if (vendor.userId !== userId) throw new ForbiddenException();
+    return this.vendorsRepository.createEquipment({ ...dto, vendorId });
+  }
+
+  async updateEquipment(equipmentId: string, userId: string, data: Partial<CreateEquipmentDto>) {
+    const equipment = await this.vendorsRepository.findEquipmentById(equipmentId);
+    if (!equipment) throw new NotFoundException('Equipment not found');
+    const vendor = await this.findOne(equipment.vendorId);
+    if (vendor.userId !== userId) throw new ForbiddenException();
+    return this.vendorsRepository.updateEquipment(equipmentId, data);
+  }
+
+  async removeEquipment(equipmentId: string, userId: string) {
+    const equipment = await this.vendorsRepository.findEquipmentById(equipmentId);
+    if (!equipment) throw new NotFoundException('Equipment not found');
+    const vendor = await this.findOne(equipment.vendorId);
+    if (vendor.userId !== userId) throw new ForbiddenException();
+    await this.vendorsRepository.deleteEquipment(equipmentId);
+  }
+
+  // ── Service Add-ons ────────────────────────────────────────────────────────
+
+  async getAddons(vendorId: string) {
+    const addons = await this.vendorsRepository.findAddonsByVendor(vendorId);
+    return { data: addons };
+  }
+
+  async addAddon(vendorId: string, userId: string, dto: CreateAddonDto) {
+    const vendor = await this.findOne(vendorId);
+    if (vendor.userId !== userId) throw new ForbiddenException();
+    return this.vendorsRepository.createAddon({ ...dto, vendorId });
+  }
+
+  async updateAddon(addonId: string, userId: string, data: Partial<CreateAddonDto>) {
+    const addon = await this.vendorsRepository.findAddonById(addonId);
+    if (!addon) throw new NotFoundException('Add-on not found');
+    const vendor = await this.findOne(addon.vendorId);
+    if (vendor.userId !== userId) throw new ForbiddenException();
+    return this.vendorsRepository.updateAddon(addonId, data);
+  }
+
+  async removeAddon(addonId: string, userId: string) {
+    const addon = await this.vendorsRepository.findAddonById(addonId);
+    if (!addon) throw new NotFoundException('Add-on not found');
+    const vendor = await this.findOne(addon.vendorId);
+    if (vendor.userId !== userId) throw new ForbiddenException();
+    await this.vendorsRepository.deleteAddon(addonId);
   }
 }
