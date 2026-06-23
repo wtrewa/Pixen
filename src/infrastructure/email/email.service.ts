@@ -99,6 +99,31 @@ export class EmailService {
     });
   }
 
+  async sendPasswordResetEmail(email: string, otp: string): Promise<void> {
+    this.logger.warn(`[PASSWORD RESET] ${email} → ${otp}`);
+
+    const content = `
+      <h2 style="color: #FFFFFF; font-size: 24px; font-weight: 700; margin: 0 0 16px; text-align: center;">Reset Your Password</h2>
+      <p style="color: rgba(255,255,255,0.5); font-size: 15px; line-height: 1.6; margin: 0 0 32px; text-align: center;">
+        We received a request to reset your password. Use the code below to set a new one. This code expires in 15 minutes.
+      </p>
+      <div style="background-color: rgba(200,169,106,0.08); border: 1px dashed rgba(200,169,106,0.4); border-radius: 16px; padding: 32px; text-align: center;">
+        <span style="font-family: 'Courier New', Courier, monospace; font-size: 42px; font-weight: 700; color: #C8A96A; letter-spacing: 12px; margin-left: 12px;">
+          ${otp}
+        </span>
+      </div>
+      <p style="color: rgba(255,255,255,0.3); font-size: 13px; margin: 32px 0 0; text-align: center;">
+        If you did not request a password reset, please ignore this email — your password will remain unchanged.
+      </p>
+    `;
+
+    await this.send({
+      to: email,
+      subject: '[PIXEN] Password Reset Code',
+      html: this.getLayout('Password Reset', content),
+    });
+  }
+
   async sendWelcomeEmail(email: string, fullName: string): Promise<void> {
     const content = `
       <h2 style="color: #FFFFFF; font-size: 26px; font-weight: 700; margin: 0 0 16px; text-align: center;">Welcome, ${fullName}</h2>

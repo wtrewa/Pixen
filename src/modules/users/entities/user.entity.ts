@@ -52,6 +52,12 @@ export class User extends BaseEntity {
   @Column({ name: 'email_verification_expires', nullable: true, type: 'timestamptz' })
   emailVerificationExpires: Date;
 
+  @Column({ name: 'password_reset_token', nullable: true, select: false })
+  passwordResetToken: string;
+
+  @Column({ name: 'password_reset_expires', nullable: true, type: 'timestamptz' })
+  passwordResetExpires: Date;
+
   @Column({ nullable: true })
   avatar: string;
 

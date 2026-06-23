@@ -37,6 +37,23 @@ export class RazorpayProvider {
     });
   }
 
+  async refundPayment(gatewayPaymentId: string, amount: number) {
+    const isDev = this.config.get('app.env') === 'development';
+    if (!this.client || isDev || gatewayPaymentId.startsWith('mock_') || gatewayPaymentId.startsWith('pay_mock_')) {
+      this.logger.warn(`Using mock refund for payment ${gatewayPaymentId} (Env: ${this.config.get('app.env')})`);
+      return {
+        id: `rfnd_mock_${Date.now()}`,
+        payment_id: gatewayPaymentId,
+        amount: Math.round(amount * 100),
+        status: 'processed',
+      };
+    }
+    return this.client.payments.refund(gatewayPaymentId, {
+      amount: Math.round(amount * 100),
+      speed: 'normal',
+    });
+  }
+
   verifyWebhookSignature(body: string, signature: string): boolean {
     const expectedSignature = crypto
       .createHmac('sha256', this.webhookSecret)

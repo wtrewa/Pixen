@@ -1,14 +1,19 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BullModule } from '@nestjs/bull';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 import { RazorpayProvider } from './providers/razorpay.provider';
 import { CashfreeProvider } from './providers/cashfree.provider';
 import { Payment } from './entities/payment.entity';
 import { Booking } from '../bookings/entities/booking.entity';
+import { QUEUES } from '../../common/constants';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Payment, Booking])],
+  imports: [
+    TypeOrmModule.forFeature([Payment, Booking]),
+    BullModule.registerQueue({ name: QUEUES.NOTIFICATIONS }),
+  ],
   controllers: [PaymentsController],
   providers: [PaymentsService, RazorpayProvider, CashfreeProvider],
   exports: [PaymentsService, CashfreeProvider],

@@ -44,4 +44,13 @@ export class Payment extends BaseEntity {
 
   @Column({ name: 'invoice_url', nullable: true })
   invoiceUrl: string;
+
+  @Column({ name: 'refund_id', nullable: true })
+  refundId: string;
+
+  @Column({ name: 'refund_reason', nullable: true })
+  refundReason: string;
+
+  @Column({ name: 'refunded_at', type: 'timestamptz', nullable: true })
+  refundedAt: Date;
 }

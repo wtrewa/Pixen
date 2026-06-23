@@ -91,6 +91,32 @@ export class CashfreeProvider {
     }
   }
 
+  async refundOrder(orderId: string, refundAmount: number, refundNote?: string): Promise<any> {
+    const refundId = `REFUND_${orderId}_${Date.now()}`;
+
+    if (!this.hasCredentials || orderId.startsWith('mock_') || orderId.includes('mock')) {
+      this.logger.warn(`[MOCK] refundOrder ${orderId} → ${refundId}`);
+      return {
+        refund_id: refundId,
+        order_id: orderId,
+        refund_amount: refundAmount,
+        refund_status: 'SUCCESS',
+      };
+    }
+
+    try {
+      const response = await this.cashfree.PGOrderCreateRefund(orderId, {
+        refund_id: refundId,
+        refund_amount: refundAmount,
+        refund_note: refundNote,
+      });
+      return response.data;
+    } catch (error) {
+      this.logger.error('Cashfree Refund Error:', JSON.stringify(error.response?.data || error.message, null, 2));
+      throw error;
+    }
+  }
+
   verifyWebhook(signature: string, rawBody: string, timestamp: string) {
     return this.cashfree.PGVerifyWebhookSignature(signature, rawBody, timestamp);
   }

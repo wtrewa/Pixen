@@ -107,6 +107,54 @@ export class AuthService {
     return { message: 'Verification code sent. Please check your inbox.' };
   }
 
+  async forgotPassword(email: string) {
+    // Always return the same message to avoid leaking which emails are registered
+    const genericResponse = {
+      message: 'If an account exists with this email, a password reset code has been sent.',
+    };
+
+    const user = await this.userRepo.findOne({
+      where: { email },
+      select: ['id', 'email', 'provider', 'password'],
+    });
+    if (!user || !user.password) return genericResponse;
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const resetExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+    await this.userRepo.update(user.id, {
+      passwordResetToken: otp,
+      passwordResetExpires: resetExpires,
+    });
+
+    await this.emailService.sendPasswordResetEmail(email, otp);
+    return genericResponse;
+  }
+
+  async resetPassword(email: string, code: string, newPassword: string) {
+    const user = await this.userRepo.findOne({
+      where: { email },
+      select: ['id', 'email', 'passwordResetToken', 'passwordResetExpires'],
+    });
+
+    if (!user || !user.passwordResetToken || user.passwordResetToken !== code) {
+      throw new BadRequestException('Invalid or expired reset code');
+    }
+    if (user.passwordResetExpires < new Date()) {
+      throw new BadRequestException('Reset code has expired. Please request a new one.');
+    }
+
+    user.password = newPassword; // hashed by @BeforeUpdate hook on save
+    user.passwordResetToken = null;
+    user.passwordResetExpires = null;
+    await this.userRepo.save(user);
+
+    // Revoke all sessions so old refresh tokens can't be used after the reset
+    await this.refreshRepo.delete({ userId: user.id });
+
+    return { message: 'Password reset successfully. Please log in with your new password.' };
+  }
+
   async login(dto: LoginDto) {
     const user = await this.userRepo.findOne({
       where: { email: dto.email },

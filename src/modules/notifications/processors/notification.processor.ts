@@ -165,6 +165,29 @@ export class NotificationProcessor {
     }
   }
 
+  @Process('refund-initiated')
+  async handleRefundInitiated(job: Job) {
+    this.logger.log(`Processing refund-initiated [${job.id}]`);
+    const { bookingId, customerId, amount, reason } = job.data;
+
+    await this.notificationsService.create({
+      userId: customerId,
+      type: NotificationType.REFUND_INITIATED,
+      title: 'Refund Initiated',
+      message: `A refund of ₹${amount} has been initiated for your booking. It should reflect in your account within 5-7 business days.`,
+      metadata: { bookingId, amount, reason },
+    });
+
+    const email = await this.getUserEmail(customerId);
+    if (email) {
+      await this.emailService.send({
+        to: email,
+        subject: 'Refund Initiated - Pixen',
+        html: `<p>A refund of ₹${amount} has been initiated for your booking${reason ? ` (reason: ${reason})` : ''}.</p><p>The amount should reflect in your original payment method within 5-7 business days.</p>`,
+      });
+    }
+  }
+
   @Process('booking-delivered')
   async handleBookingDelivered(job: Job) {
     this.logger.log(`Processing booking-delivered [${job.id}]`);

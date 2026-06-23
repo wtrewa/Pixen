@@ -21,6 +21,11 @@ import {
 import { BookingStatus } from '../../common/enums/booking-status.enum';
 import { Request } from 'express';
 import { ConfigService } from '@nestjs/config';
+import { InjectQueue } from '@nestjs/bull';
+import { Queue } from 'bull';
+import { RefundPaymentDto } from './dto/refund-payment.dto';
+import { assertValidTransition } from '../bookings/state-machine/booking.state-machine';
+import { QUEUES } from '../../common/constants';
 
 @Injectable()
 export class PaymentsService {
@@ -32,6 +37,7 @@ export class PaymentsService {
     private readonly razorpay: RazorpayProvider,
     private readonly cashfree: CashfreeProvider,
     private readonly config: ConfigService,
+    @InjectQueue(QUEUES.NOTIFICATIONS) private readonly notifyQueue: Queue,
   ) {}
 
   async initiate(userId: string, dto: InitiatePaymentDto) {
@@ -240,5 +246,69 @@ export class PaymentsService {
 
   findByBooking(bookingId: string) {
     return this.paymentRepo.find({ where: { bookingId } });
+  }
+
+  async refund(bookingId: string, dto: RefundPaymentDto) {
+    const booking = await this.bookingRepo.findOne({ where: { id: bookingId } });
+    if (!booking) throw new NotFoundException('Booking not found');
+
+    // Only CANCELLED or COMPLETED bookings can move to REFUNDED
+    assertValidTransition(booking.status, BookingStatus.REFUNDED);
+
+    const payments = await this.paymentRepo.find({
+      where: { bookingId, status: PaymentStatus.SUCCESS },
+    });
+    if (payments.length === 0) {
+      throw new BadRequestException('No successful payments found for this booking — nothing to refund.');
+    }
+
+    const refunded: Payment[] = [];
+    let totalRefunded = 0;
+
+    for (const payment of payments) {
+      let refundId: string;
+
+      if (payment.gateway === PaymentGateway.RAZORPAY) {
+        if (!payment.gatewayPaymentId) {
+          throw new BadRequestException(
+            `Payment ${payment.id} has no gateway payment id — cannot refund via Razorpay.`,
+          );
+        }
+        const refund = await this.razorpay.refundPayment(payment.gatewayPaymentId, Number(payment.amount));
+        refundId = (refund as any).id;
+      } else {
+        const refund = await this.cashfree.refundOrder(payment.gatewayOrderId, Number(payment.amount), dto.reason);
+        refundId = refund.refund_id;
+      }
+
+      await this.paymentRepo.update(payment.id, {
+        status: PaymentStatus.REFUNDED,
+        refundId,
+        refundReason: dto.reason ?? null,
+        refundedAt: new Date(),
+      });
+
+      totalRefunded += Number(payment.amount);
+      refunded.push({ ...payment, status: PaymentStatus.REFUNDED, refundId } as Payment);
+      this.logger.log(`Refunded payment ${payment.id} (₹${payment.amount}) via ${payment.gateway} → ${refundId}`);
+    }
+
+    await this.bookingRepo.update(bookingId, { status: BookingStatus.REFUNDED });
+
+    try {
+      await this.notifyQueue.add('refund-initiated', {
+        bookingId,
+        customerId: booking.customerId,
+        amount: totalRefunded,
+        reason: dto.reason,
+      });
+    } catch (err) {
+      this.logger.error(`Failed to queue refund notification for booking ${bookingId}: ${err.message}`);
+    }
+
+    return {
+      message: `Refund of ₹${totalRefunded} initiated across ${refunded.length} payment(s).`,
+      data: { bookingId, totalRefunded, payments: refunded },
+    };
   }
 }

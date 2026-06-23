@@ -4,8 +4,11 @@ import { Request } from 'express';
 import { PaymentsService } from './payments.service';
 import { InitiatePaymentDto } from './dto/initiate-payment.dto';
 import { VerifyPaymentDto } from './dto/verify-payment.dto';
+import { RefundPaymentDto } from './dto/refund-payment.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { Role } from '../../common/enums/roles.enum';
 import { User } from '../users/entities/user.entity';
 
 @ApiTags('Payments')
@@ -39,5 +42,13 @@ export class PaymentsController {
   @ApiOperation({ summary: 'Get payments for a booking' })
   findByBooking(@Param('bookingId') bookingId: string) {
     return this.paymentsService.findByBooking(bookingId);
+  }
+
+  @Post('refund/:bookingId')
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Refund all successful payments for a booking (admin only)' })
+  refund(@Param('bookingId') bookingId: string, @Body() dto: RefundPaymentDto) {
+    return this.paymentsService.refund(bookingId, dto);
   }
 }
