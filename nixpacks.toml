@@ -1,0 +1,5 @@
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "node --dns-result-order=ipv4first dist/main.js"
