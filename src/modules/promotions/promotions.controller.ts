@@ -2,6 +2,7 @@ import { Controller, Get, Post, Delete, Patch, Body, Param, Query } from '@nestj
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { PromotionsService } from './promotions.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
+import { UpdateOfferDto } from './dto/update-offer.dto';
 import { ApplyOfferDto } from './dto/apply-offer.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Public } from '../../common/decorators/public.decorator';
@@ -37,6 +38,16 @@ export class PromotionsController {
   @ApiOperation({ summary: 'Validate an offer code and get discount details' })
   validate(@Body() dto: ApplyOfferDto) {
     return this.promotionsService.validateCode(dto.code);
+  }
+
+  @Patch(':id')
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Update an existing offer (Admin)' })
+  update(@Param('id') id: string, @Body() dto: UpdateOfferDto) {
+    return this.promotionsService.update(id, {
+      ...dto,
+      expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined,
+    });
   }
 
   @Patch(':id/toggle')
