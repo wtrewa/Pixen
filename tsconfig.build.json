@@ -1,4 +1,7 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "test", "dist", "**/*spec.ts", "frontend"]
+  "compilerOptions": {
+    "rootDir": "./src"
+  },
+  "exclude": ["node_modules", "test", "dist", "**/*spec.ts", "frontend", "add_priya_packages.ts"]
 }
