@@ -11,11 +11,11 @@ export enum PostType {
 
 @Entity('posts')
 export class Post extends BaseEntity {
-  @ApiProperty({ example: 'uuid-v4-user-id' })
-  @Column({ name: 'user_id' })
+  @ApiProperty({ example: 'uuid-v4-user-id', required: false })
+  @Column({ name: 'user_id', nullable: true })
   userId: string;
 
-  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'user_id' })
   user: User;
 

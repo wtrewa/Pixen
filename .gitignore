@@ -2,6 +2,9 @@
 node_modules/
 dist/
 
+# typescript incremental build cache (breaks fresh builds when stale)
+*.tsbuildinfo
+
 # env files
 .env
 !.env.example
