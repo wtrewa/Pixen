@@ -11,4 +11,4 @@ RUN npm prune --production && npm cache clean --force
 RUN mkdir -p logs
 
 EXPOSE 8080
-CMD ["node", "--dns-result-order=ipv4first", "dist/main.js"]
+CMD ["sh", "-c", "node dist/database/migrate.js && exec node --dns-result-order=ipv4first dist/main.js"]
