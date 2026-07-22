@@ -42,6 +42,18 @@ export class PromotionsService {
     return offer;
   }
 
+  async update(id: string, dto: Partial<Offer>) {
+    const offer = await this.findOne(id);
+
+    if (dto.code && dto.code !== offer.code) {
+      const exists = await this.offerRepo.findOne({ where: { code: dto.code } });
+      if (exists) throw new ConflictException('Offer code already exists');
+    }
+
+    Object.assign(offer, dto);
+    return this.offerRepo.save(offer);
+  }
+
   async remove(id: string) {
     const offer = await this.findOne(id);
     await this.offerRepo.remove(offer);
