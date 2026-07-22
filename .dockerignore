@@ -5,3 +5,5 @@ pixen-web
 .env
 npm-debug.log
 *.md
+dist
+*.tsbuildinfo
