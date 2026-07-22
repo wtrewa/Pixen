@@ -5,7 +5,7 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
-RUN npm run build && ls dist/main.js
+RUN npm run build
 
 RUN npm prune --production && npm cache clean --force
 RUN mkdir -p logs && chmod -R 777 logs
