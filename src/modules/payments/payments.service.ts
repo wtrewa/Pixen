@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   UnauthorizedException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -19,6 +20,8 @@ import {
   PaymentType,
 } from '../../common/enums/payment-status.enum';
 import { BookingStatus } from '../../common/enums/booking-status.enum';
+import { Role } from '../../common/enums/roles.enum';
+import { User } from '../users/entities/user.entity';
 import { Request } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bull';
@@ -179,9 +182,15 @@ export class PaymentsService {
   }
 
   async handleWebhook(req: Request) {
+    // The gateway signs the exact bytes it sent. `rawBody` is populated by the
+    // `rawBody: true` Nest option in main.ts; re-serializing req.body would break
+    // verification because key ordering/whitespace can differ.
+    const rawBody = (req as any).rawBody
+      ? (req as any).rawBody.toString('utf8')
+      : JSON.stringify(req.body);
+
     const rzpSignature = req.headers['x-razorpay-signature'] as string;
     if (rzpSignature) {
-      const rawBody = JSON.stringify(req.body);
       if (this.razorpay.verifyWebhookSignature(rawBody, rzpSignature)) {
         const event = req.body?.event;
         if (event === 'payment.captured') {
@@ -200,7 +209,7 @@ export class PaymentsService {
     const cfTimestamp = req.headers['x-webhook-timestamp'] as string;
     if (cfSignature && cfTimestamp) {
       try {
-        this.cashfree.verifyWebhook(cfSignature, JSON.stringify(req.body), cfTimestamp);
+        this.cashfree.verifyWebhook(cfSignature, rawBody, cfTimestamp);
         const { order, payment } = req.body.data;
         if (payment.payment_status === 'SUCCESS') {
           const paymentRecord = await this.paymentRepo.findOne({ where: { gatewayOrderId: order.order_id } });
@@ -244,7 +253,21 @@ export class PaymentsService {
     }
   }
 
-  findByBooking(bookingId: string) {
+  async findByBooking(bookingId: string, user: User) {
+    const booking = await this.bookingRepo.findOne({
+      where: { id: bookingId },
+      relations: ['vendor'],
+    });
+    if (!booking) throw new NotFoundException('Booking not found');
+
+    const isOwner =
+      booking.customerId === user.id ||
+      booking.vendor?.userId === user.id ||
+      [Role.ADMIN, Role.SUPER_ADMIN].includes(user.role);
+    if (!isOwner) {
+      throw new ForbiddenException('You do not have access to this booking’s payments');
+    }
+
     return this.paymentRepo.find({ where: { bookingId } });
   }
 

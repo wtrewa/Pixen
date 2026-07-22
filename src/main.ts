@@ -1,5 +1,4 @@
 import 'reflect-metadata';
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -13,23 +12,26 @@ import { WinstonModule } from 'nest-winston';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: WinstonModule.createLogger(winstonConfig),
+    // Preserve the raw request body so payment-gateway webhook signatures can be
+    // verified against the exact bytes the gateway signed (see PaymentsService).
+    rawBody: true,
   });
 
   const config = app.get(ConfigService);
   const port = config.get<number>('app.port', 3000);
 
-  // Temporarily disable helmet to rule out header interference
-  // app.use(helmet()); 
+  app.use(helmet());
+
+  // Restrict CORS to the configured frontend origin(s). Never reflect arbitrary
+  // origins while allowing credentials.
+  const allowedOrigins = (process.env.CORS_ORIGINS || config.get<string>('app.frontendUrl') || '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
 
   app.enableCors({
-    origin: true,
+    origin: allowedOrigins.length > 0 ? allowedOrigins : false,
     credentials: true,
-  });
-
-  // Global request logger to catch even OPTIONS requests
-  app.use((req, res, next) => {
-    console.log(`[DEBUG] ${req.method} ${req.url}`);
-    next();
   });
 
   app.setGlobalPrefix('api/v1');

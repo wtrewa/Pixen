@@ -52,18 +52,19 @@ export class BookingsController {
   @ApiOperation({ summary: 'Get vendor bookings' })
   vendorBookings(
     @Param('vendorId') vendorId: string,
+    @CurrentUser() user: User,
     @Query('page') page = 1,
     @Query('limit') limit = 10,
   ) {
-    return this.bookingsService.findVendorBookings(vendorId, +page, +limit);
+    return this.bookingsService.findVendorBookings(vendorId, +page, +limit, user);
   }
 
   @Get('collaborator-invites/:vendorId')
   @UseGuards(JwtAuthGuard)
   @Roles(Role.VENDOR)
   @ApiOperation({ summary: 'Get pending collaborator invites for a vendor' })
-  getCollaboratorInvites(@Param('vendorId') vendorId: string) {
-    return this.bookingsService.getMyCollaboratorInvites(vendorId);
+  getCollaboratorInvites(@Param('vendorId') vendorId: string, @CurrentUser() user: User) {
+    return this.bookingsService.getMyCollaboratorInvites(vendorId, user);
   }
 
   @Get(':id')
@@ -110,15 +111,15 @@ export class BookingsController {
   @Get(':id/addons')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get add-ons attached to a booking' })
-  getAddons(@Param('id') id: string) {
-    return this.bookingsService.getBookingAddons(id);
+  getAddons(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.bookingsService.getBookingAddons(id, user);
   }
 
   @Get(':id/custom-requests')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get custom requests for a booking' })
-  getCustomRequests(@Param('id') id: string) {
-    return this.bookingsService.getBookingCustomRequests(id);
+  getCustomRequests(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.bookingsService.getBookingCustomRequests(id, user);
   }
 
   @Patch('custom-requests/:requestId/quote')
@@ -150,8 +151,8 @@ export class BookingsController {
   @Get(':id/collaborators')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get collaborators for a booking' })
-  getCollaborators(@Param('id') id: string) {
-    return this.bookingsService.getBookingCollaborators(id);
+  getCollaborators(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.bookingsService.getBookingCollaborators(id, user);
   }
 
   @Post(':id/collaborators')

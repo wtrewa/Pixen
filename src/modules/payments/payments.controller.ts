@@ -40,8 +40,8 @@ export class PaymentsController {
 
   @Get('booking/:bookingId')
   @ApiOperation({ summary: 'Get payments for a booking' })
-  findByBooking(@Param('bookingId') bookingId: string) {
-    return this.paymentsService.findByBooking(bookingId);
+  findByBooking(@CurrentUser() user: User, @Param('bookingId') bookingId: string) {
+    return this.paymentsService.findByBooking(bookingId, user);
   }
 
   @Post('refund/:bookingId')

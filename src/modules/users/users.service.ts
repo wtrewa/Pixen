@@ -1,7 +1,9 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
 import { UsersRepository } from './users.repository';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { QueryUserDto } from './dto/query-user.dto';
 import { RedisService } from '../../infrastructure/redis/redis.service';
 import { CACHE_KEYS } from '../../common/constants';
@@ -38,9 +40,17 @@ export class UsersService {
     return this.usersRepository.findByEmail(email);
   }
 
-  async update(id: string, dto: UpdateUserDto) {
+  async update(id: string, dto: UpdateUserDto | UpdateProfileDto) {
     await this.findOne(id);
-    const updated = await this.usersRepository.update(id, dto as any);
+
+    // `repository.update` bypasses TypeORM entity hooks, so the @BeforeUpdate
+    // password hash never runs — hash here to avoid storing plaintext passwords.
+    const data: any = { ...dto };
+    if (data.password) {
+      data.password = await bcrypt.hash(data.password, 10);
+    }
+
+    const updated = await this.usersRepository.update(id, data);
     await this.redis.del(CACHE_KEYS.USER_PROFILE(id));
     return updated;
   }

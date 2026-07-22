@@ -3,6 +3,7 @@ import { Response } from 'express';
 import { CalendarService } from './calendar.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { ConfigService } from '@nestjs/config';
 
 @Controller('calendar')
@@ -20,12 +21,13 @@ export class CalendarController {
   }
 
   @Get('google/callback')
+  @Public()
   async googleCallback(
     @Query('code') code: string,
-    @Query('state') userId: string,
+    @Query('state') state: string,
     @Res() res: Response,
   ) {
-    await this.calendarService.handleGoogleCallback(code, userId);
+    await this.calendarService.handleGoogleCallback(code, state);
     
     // Redirect back to frontend calendar page
     const frontendUrl = this.config.get<string>('app.frontendUrl');
