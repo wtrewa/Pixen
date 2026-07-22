@@ -50,10 +50,12 @@ export class AuthController {
 
   @Public()
   @Post('refresh')
+  @UseGuards(AuthGuard('jwt-refresh'))
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Refresh access token' })
   refresh(@Body() dto: RefreshTokenDto, @CurrentUser() user: any) {
-    return this.authService.refresh(user?.id ?? '', dto.refreshToken);
+    // The jwt-refresh strategy validates the refresh token and exposes its `sub` claim.
+    return this.authService.refresh(user?.sub ?? '', dto.refreshToken);
   }
 
   @Post('logout')

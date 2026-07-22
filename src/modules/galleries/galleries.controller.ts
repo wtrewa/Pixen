@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Param, UseGuards, Request, ForbiddenException, Res } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, UseGuards, Request, ForbiddenException, Res, Headers } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { GalleriesService } from './galleries.service';
 import { CreateGalleryDto } from './dto/create-gallery.dto';
@@ -49,8 +49,9 @@ export class GalleriesController {
   @Get(':id')
   @Public() // Accessible if token is valid or gallery is public
   @ApiOperation({ summary: 'Fetch gallery details and media' })
-  findOne(@Param('id') id: string) {
-    return this.galleriesService.findOne(id);
+  findOne(@Param('id') id: string, @Headers('authorization') authHeader?: string) {
+    const accessToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+    return this.galleriesService.findOne(id, accessToken);
   }
 
   @Post(':id/upload-urls')

@@ -53,12 +53,36 @@ export class GalleriesService {
     });
   }
 
-  async findOne(id: string) {
-    const gallery = await this.galleryRepo.findOne({
-      where: { id },
-      relations: ['media'],
-    });
+  async findOne(id: string, accessToken?: string) {
+    const gallery = await this.galleryRepo
+      .createQueryBuilder('gallery')
+      .leftJoinAndSelect('gallery.media', 'media')
+      .addSelect('gallery.passwordHash')
+      .where('gallery.id = :id', { id })
+      .getOne();
+
     if (!gallery) throw new NotFoundException('Gallery not found');
+
+    // Password-protected galleries require a valid access token scoped to THIS
+    // gallery (issued by POST :id/access). Public galleries stay open.
+    if (gallery.passwordHash) {
+      let valid = false;
+      if (accessToken) {
+        try {
+          const payload = await this.jwtService.verifyAsync<{ galleryId: string }>(accessToken, {
+            secret: this.config.get('jwt.accessSecret'),
+          });
+          valid = payload.galleryId === id;
+        } catch {
+          valid = false;
+        }
+      }
+      if (!valid) {
+        throw new UnauthorizedException('This gallery is password-protected. Please authenticate first.');
+      }
+    }
+
+    delete (gallery as any).passwordHash;
     return gallery;
   }
 

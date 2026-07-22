@@ -329,8 +329,21 @@ export class BookingsService {
     return this.bookingsRepository.findByCustomer(customerId, page, limit, status as BookingStatus | undefined);
   }
 
-  findVendorBookings(vendorId: string, page: number, limit: number) {
+  findVendorBookings(vendorId: string, page: number, limit: number, user: User) {
+    this.assertVendorAccess(vendorId, user);
     return this.bookingsRepository.findByVendor(vendorId, page, limit);
+  }
+
+  /**
+   * Ensures the caller may act on the given vendorId: either an admin, or the
+   * vendor whose profile matches the id. Prevents one vendor from reading
+   * another vendor's bookings / invites by guessing their vendorId.
+   */
+  private assertVendorAccess(vendorId: string, user: User) {
+    const isAdmin = [Role.ADMIN, Role.SUPER_ADMIN].includes(user.role);
+    if (!isAdmin && (user as any).vendorId !== vendorId) {
+      throw new ForbiddenException('You can only access your own vendor data');
+    }
   }
 
   async confirmByVendor(id: string, user: User, dto: ConfirmBookingDto) {
@@ -463,11 +476,13 @@ export class BookingsService {
 
   // ── Add-ons & Custom Requests ──────────────────────────────────────────────
 
-  getBookingAddons(bookingId: string) {
+  async getBookingAddons(bookingId: string, user: User) {
+    await this.findOne(bookingId, user); // enforces booking ownership
     return this.bookingsRepository.findAddonsByBooking(bookingId);
   }
 
-  getBookingCustomRequests(bookingId: string) {
+  async getBookingCustomRequests(bookingId: string, user: User) {
+    await this.findOne(bookingId, user);
     return this.bookingsRepository.findCustomRequestsByBooking(bookingId);
   }
 
@@ -516,11 +531,13 @@ export class BookingsService {
 
   // ── Collaborators ──────────────────────────────────────────────────────────
 
-  getBookingCollaborators(bookingId: string) {
+  async getBookingCollaborators(bookingId: string, user: User) {
+    await this.findOne(bookingId, user);
     return this.bookingsRepository.findCollaboratorsByBooking(bookingId);
   }
 
-  getMyCollaboratorInvites(collaboratorVendorId: string) {
+  getMyCollaboratorInvites(collaboratorVendorId: string, user: User) {
+    this.assertVendorAccess(collaboratorVendorId, user);
     return this.bookingsRepository.findCollaboratorInvites(collaboratorVendorId);
   }
 

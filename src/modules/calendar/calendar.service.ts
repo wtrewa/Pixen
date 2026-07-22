@@ -1,5 +1,6 @@
-import { Injectable, Logger, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { google } from 'googleapis';
@@ -14,6 +15,7 @@ export class CalendarService {
 
   constructor(
     private readonly config: ConfigService,
+    private readonly jwtService: JwtService,
     @InjectRepository(CalendarConnection)
     private readonly connectionRepository: Repository<CalendarConnection>,
     @InjectRepository(VendorAvailability)
@@ -33,15 +35,32 @@ export class CalendarService {
       'https://www.googleapis.com/auth/userinfo.email',
     ];
 
+    // Sign the userId into a short-lived, tamper-proof state token to prevent
+    // an attacker from forging `state` and attaching their Google account to another user.
+    const state = this.jwtService.sign(
+      { sub: userId },
+      { secret: this.config.get<string>('jwt.accessSecret'), expiresIn: '15m' },
+    );
+
     return this.oauth2Client.generateAuthUrl({
       access_type: 'offline',
       scope: scopes,
       prompt: 'consent',
-      state: userId, // Pass userId in state to correlate on callback
+      state,
     });
   }
 
-  async handleGoogleCallback(code: string, userId: string) {
+  async handleGoogleCallback(code: string, state: string) {
+    let userId: string;
+    try {
+      const payload = this.jwtService.verify<{ sub: string }>(state, {
+        secret: this.config.get<string>('jwt.accessSecret'),
+      });
+      userId = payload.sub;
+    } catch {
+      throw new BadRequestException('Invalid or expired OAuth state');
+    }
+
     const { tokens } = await this.oauth2Client.getToken(code);
     this.oauth2Client.setCredentials(tokens);
 
